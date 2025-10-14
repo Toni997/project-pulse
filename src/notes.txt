@@ -1,0 +1,4 @@
+cpal - I/O
+symphonia - decoding audio formats
+
+encoding - NE, koristiti uncompressed format WAV (samo se dodaju headeri)

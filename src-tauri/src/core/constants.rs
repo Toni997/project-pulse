@@ -1,0 +1,2 @@
+pub const DRIVER_BUFFER_SIZE: u32 = 512;
+pub const ENGINE_BUFFER_MUTLIPLIER: u32 = 2;
