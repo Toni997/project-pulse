@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use serde::Serialize;
-use walkdir::WalkDir;
 
 #[derive(Serialize)]
 pub struct FileEntry {
@@ -35,6 +34,11 @@ fn scan_directory_tree_recursively(path: &PathBuf) -> Vec<FileEntry> {
 }
 
 #[tauri::command]
-pub fn scan_directory_tree(path: String) -> Vec<FileEntry> {
-    scan_directory_tree_recursively(&PathBuf::from(path))
+pub async fn scan_directory_tree(path: String) -> Vec<FileEntry> {
+    let path = PathBuf::from(path);
+
+    let result =
+        tauri::async_runtime::spawn_blocking(move || scan_directory_tree_recursively(&path)).await; // double `?` unwraps both Results
+
+    result.unwrap()
 }

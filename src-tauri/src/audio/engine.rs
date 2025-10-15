@@ -8,11 +8,10 @@ use ringbuf::HeapRb;
 use std::collections::HashMap;
 use std::sync::{LazyLock, RwLock};
 
-pub static mut ENGINE_BUFFER: LazyLock<HeapRb<f32>> =
-    LazyLock::new(|| HeapRb::new((DRIVER_BUFFER_SIZE * ENGINE_BUFFER_MUTLIPLIER) as usize));
+pub static mut ENGINE_BUFFER: LazyLock<HeapRb<f32>> = LazyLock::new(|| HeapRb::new(4096 as usize));
 
 pub static mut PREVIEW_BUFFER: LazyLock<HeapRb<f32>> =
-    LazyLock::new(|| HeapRb::new((DRIVER_BUFFER_SIZE * ENGINE_BUFFER_MUTLIPLIER) as usize));
+    LazyLock::new(|| HeapRb::new(44100 as usize));
 
 pub struct AudioEngine {
     host: Host,
@@ -30,6 +29,35 @@ impl AudioEngine {
         let supported_config = device.default_output_config().unwrap();
         let mut config: StreamConfig = supported_config.config();
         config.buffer_size = BufferSize::Fixed(DRIVER_BUFFER_SIZE);
+
+        let supported_configs_range = device.supported_output_configs().unwrap();
+        println!("Supported output configs:");
+        for config in supported_configs_range {
+            let buffer_size = config.buffer_size();
+            match buffer_size {
+                cpal::SupportedBufferSize::Range { min, max } => {
+                    println!(
+                    "Channels: {:<2} | Sample rate: {:<6}-{:>6} | Buffer size range: {}–{} frames",
+                    config.channels(),
+                    config.min_sample_rate().0,
+                    config.max_sample_rate().0,
+                    min,
+                    max
+                );
+                }
+                cpal::SupportedBufferSize::Unknown => {
+                    println!(
+                    "Channels: {:<2} | Sample rate: {:<6}-{:>6} | Buffer size: unknown (system decides)",
+                    config.channels(),
+                    config.min_sample_rate().0,
+                    config.max_sample_rate().0,
+                );
+                }
+            }
+        }
+
+        println!("Output stream sample rate: {}", config.sample_rate.0);
+        println!("Output stream channels: {}", config.channels);
 
         Self {
             host,
@@ -50,8 +78,8 @@ impl AudioEngine {
                         ENGINE_BUFFER.pop_slice(output);
                     }
                     if AUDIO_MIXER.is_preview_playing {
-                        let mut preview_buf = [0.0f32; DRIVER_BUFFER_SIZE as usize];
-                        PREVIEW_BUFFER.pop_slice(&mut preview_buf);
+                        let mut preview_buf = vec![0.0f32; output.len()];
+                        let read = PREVIEW_BUFFER.pop_slice(&mut preview_buf);
                         for (out, prev) in output.iter_mut().zip(preview_buf.iter()) {
                             *out += *prev;
                         }
