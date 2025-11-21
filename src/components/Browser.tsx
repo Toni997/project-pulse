@@ -39,6 +39,14 @@ const Browser = () => {
     }
   }
 
+  const preview_audio_click = (filePath: string) => {
+    try {
+      invoke('preview_audio_file', { filePath })
+    } catch (err: any) {
+      console.log(err)
+    }
+  }
+
   return (
     <Box pos='relative' className='p-2'>
       <LoadingOverlay
@@ -62,10 +70,7 @@ const Browser = () => {
                   onClick={
                     nodeExpanded.is_dir
                       ? elementProps.onClick
-                      : () =>
-                          invoke('play_audio_file', {
-                            path: nodeExpanded.value,
-                          })
+                      : () => preview_audio_click(nodeExpanded.value)
                   }
                 >
                   {nodeExpanded.is_dir ? (

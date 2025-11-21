@@ -88,7 +88,6 @@ const Layout = () => {
   const model = Model.fromJson(layoutJson)
 
   const factory = (node: TabNode) => {
-    console.log(node)
     if (node.getComponent() === Browser.name) {
       return <Browser />
     }

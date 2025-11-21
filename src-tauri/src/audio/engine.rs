@@ -3,9 +3,10 @@ use crate::core::constants::{DRIVER_BUFFER_SIZE, ENGINE_BUFFER_MUTLIPLIER};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{BufferSize, Device, Host, Stream, StreamConfig};
-use ringbuf::traits::Consumer;
+use ringbuf::traits::{Consumer, Observer};
 use ringbuf::HeapRb;
 use std::collections::HashMap;
+use std::sync::atomic::Ordering;
 use std::sync::{LazyLock, RwLock};
 
 pub static mut ENGINE_BUFFER: LazyLock<HeapRb<f32>> = LazyLock::new(|| HeapRb::new(4096 as usize));
@@ -77,9 +78,9 @@ impl AudioEngine {
                     if AUDIO_MIXER.is_playing {
                         ENGINE_BUFFER.pop_slice(output);
                     }
-                    if AUDIO_MIXER.is_preview_playing {
+                    if AUDIO_MIXER.is_preview_playing.load(Ordering::SeqCst) {
                         let mut preview_buf = vec![0.0f32; output.len()];
-                        let read = PREVIEW_BUFFER.pop_slice(&mut preview_buf);
+                        PREVIEW_BUFFER.pop_slice(&mut preview_buf);
                         for (out, prev) in output.iter_mut().zip(preview_buf.iter()) {
                             *out += *prev;
                         }
@@ -94,6 +95,14 @@ impl AudioEngine {
 
         stream.play().unwrap();
         self.stream = Some(stream);
+    }
+
+    pub fn sample_rate(&self) -> usize {
+        self.config.sample_rate.0 as usize
+    }
+
+    pub fn num_channels(&self) -> usize {
+        self.config.channels as usize
     }
 }
 
