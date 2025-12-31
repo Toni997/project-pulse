@@ -1,6 +1,7 @@
+use anyhow::{Context, Result};
 use rubato::{
-    calculate_cutoff, FastFixedIn, FastFixedOut, FftFixedIn, PolynomialDegree, Resampler,
-    SincFixedIn, SincFixedOut, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+    calculate_cutoff, FastFixedOut, PolynomialDegree, SincFixedOut, SincInterpolationParameters,
+    SincInterpolationType, WindowFunction,
 };
 
 // TODO in the future, extract these options from user preferences
@@ -33,7 +34,7 @@ pub fn resampler_2(
     original_sample_rate: usize,
     wanted_sample_rate: usize,
     num_channels: usize,
-) -> FastFixedOut<f32> {
+) -> Result<FastFixedOut<f32>> {
     let resampler = FastFixedOut::<f32>::new(
         wanted_sample_rate as f64 / original_sample_rate as f64,
         2.0,
@@ -41,7 +42,7 @@ pub fn resampler_2(
         1024,
         num_channels,
     )
-    .unwrap();
+    .context("Failed to create resampler")?;
 
-    resampler
+    Ok(resampler)
 }

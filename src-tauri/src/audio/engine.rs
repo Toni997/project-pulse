@@ -2,15 +2,13 @@ use crate::core::constants::{BUFFER_SIZE_DEFAULT, NUM_CHANNELS_DEFAULT};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{
-    available_hosts, Device, FromSample, Host, HostId, Sample, SampleFormat, SampleRate,
-    SizedSample, Stream, StreamConfig,
+    available_hosts, Device, FromSample, Host, Sample, SampleFormat, SizedSample, Stream,
+    StreamConfig,
 };
-use ringbuf::traits::{Consumer, Observer, Split};
+use log::{error, info};
+use ringbuf::traits::{Consumer, Split};
 use ringbuf::{HeapCons, HeapProd, HeapRb};
-use serde::de::value::U64Deserializer;
-use std::collections::HashMap;
 use std::fmt::{Debug, Display};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, Mutex};
 
 pub struct AudioEngine {
@@ -28,11 +26,11 @@ pub struct AudioEngine {
 impl AudioEngine {
     pub fn new() -> Self {
         let hosts = available_hosts();
-        println!("{hosts:?}");
+        info!("{hosts:?}");
 
         let host = cpal::default_host();
         // let host = if hosts.contains(&HostId::Asio) {
-        //     println!("ASIO host available, attempting to use it.");
+        //     info!("ASIO host available, attempting to use it.");
         //     cpal::host_from_id(HostId::Asio).unwrap_or_else(|_| cpal::default_host())
         // } else {
         //     cpal::default_host()
@@ -42,17 +40,17 @@ impl AudioEngine {
             .default_output_device()
             .expect("No output device available");
 
-        println!("Host: {:?}", host.id());
-        println!(
+        info!("Host: {:?}", host.id());
+        info!(
             "Output device: {}",
             device.name().unwrap_or("Unknown".to_string())
         );
 
         // Print all supported configs for debugging
         if let Ok(configs) = device.supported_output_configs() {
-            println!("Supported configs:");
+            info!("Supported configs:");
             for (i, config) in configs.enumerate() {
-                println!("  {}: {:?}", i, config);
+                info!("  {}: {:?}", i, config);
             }
         }
 
@@ -66,14 +64,14 @@ impl AudioEngine {
 
         match supported_config.buffer_size() {
             cpal::SupportedBufferSize::Range { min, max } => {
-                println!("Supported buffer size range: {} - {}", min, max);
+                info!("Supported buffer size range: {} - {}", min, max);
             }
             cpal::SupportedBufferSize::Unknown => {
-                println!("Supported buffer size: Unknown");
+                info!("Supported buffer size: Unknown");
             }
         }
 
-        println!(
+        info!(
             "AudioEngine initialized: {} Hz, {} channels, Format: {:?}",
             config.sample_rate, config.channels, sample_format
         );
@@ -176,7 +174,7 @@ impl AudioEngine {
                         output[i] = SampleType::from_sample::<f32>(mixed);
                     }
                 },
-                move |err| eprintln!("Stream error: {}", err),
+                move |err| error!("Stream error: {}", err),
                 None,
             )
             .expect("Failed to build output stream");

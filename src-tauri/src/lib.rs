@@ -7,8 +7,9 @@ use crate::{audio::mixer::preview_audio_file, core::fs_utils::scan_directory_tre
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
-        .setup(|app| {
+        .setup(|_app| {
             // send project file name if it was a load
+            core::logger::setup_logger().expect("Failed to initialize logging");
             core::initializator::initialize_project(None);
             Ok(())
         })

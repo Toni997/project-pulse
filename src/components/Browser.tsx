@@ -8,9 +8,16 @@ import {
   Divider,
   Tooltip,
 } from '@mantine/core'
+import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
+import { notifications } from '@mantine/notifications'
 import { FolderIcon, FileAudioIcon } from '@phosphor-icons/react'
+import {
+  PREVIEW_AUDIO_ERROR_EVENT_NAME,
+  PREVIEW_AUDIO_FUNC_NAME,
+  SCAN_DIRECTORY_TREE_FUNC_NAME,
+} from '../helpers/constants'
 
 interface TreeNodeDataExpanded extends TreeNodeData {
   is_dir: boolean
@@ -19,6 +26,22 @@ interface TreeNodeDataExpanded extends TreeNodeData {
 const Browser = () => {
   const [data, setData] = useState<TreeNodeData[] | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+
+  useEffect(() => {
+    const unlisten = listen(PREVIEW_AUDIO_ERROR_EVENT_NAME, (event) => {
+      const errorText: string = event.payload as string
+      console.error('Preview failed:', errorText)
+      notifications.show({
+        color: 'red',
+        title: 'Ooops!',
+        message: errorText as string,
+      })
+    })
+
+    return () => {
+      unlisten.then((f) => f())
+    }
+  }, [])
 
   const handleSelectFolder = async () => {
     try {
@@ -29,7 +52,7 @@ const Browser = () => {
       if (!selected) return
 
       setIsLoading(true)
-      const temp: TreeNodeData[] = await invoke('scan_directory_tree', {
+      const temp: TreeNodeData[] = await invoke(SCAN_DIRECTORY_TREE_FUNC_NAME, {
         path: selected,
       })
       setData(temp)
@@ -39,12 +62,8 @@ const Browser = () => {
     }
   }
 
-  const preview_audio_click = async (filePath: string) => {
-    try {
-      await invoke('preview_audio_file', { filePath })
-    } catch (err: any) {
-      console.log(err)
-    }
+  const previewAudioClick = async (filePath: string) => {
+    invoke(PREVIEW_AUDIO_FUNC_NAME, { filePath })
   }
 
   return (
@@ -71,7 +90,7 @@ const Browser = () => {
                     onClick={
                       nodeExpanded.is_dir
                         ? elementProps.onClick
-                        : () => preview_audio_click(nodeExpanded.value)
+                        : () => previewAudioClick(nodeExpanded.value)
                     }
                   >
                     {nodeExpanded.is_dir ? (
@@ -87,7 +106,6 @@ const Browser = () => {
                         weight='light'
                       />
                     )}
-
                     <span className='text-ellipsis whitespace-nowrap overflow-hidden'>
                       {node.label}
                     </span>

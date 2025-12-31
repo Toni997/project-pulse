@@ -1,13 +1,19 @@
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, LazyLock, Mutex,
-};
+use log::{info, warn};
 use std::time::Duration;
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        LazyLock, Mutex,
+    },
+    thread,
+};
+use tauri::AppHandle;
+use tauri::Emitter;
 
-use ringbuf::traits::Consumer;
-use tauri::{async_runtime::JoinHandle, AppHandle};
-
-use crate::audio::{arrangement::Arrangement, decoder::stream_audio_file, engine::AUDIO_ENGINE};
+use crate::{
+    audio::{arrangement::Arrangement, decoder::stream_audio_file},
+    core::constants::PREVIEW_AUDIO_ERROR_EVENT_NAME,
+};
 
 pub struct AudioMixer {
     arrangements: Vec<Arrangement>,
@@ -40,8 +46,8 @@ impl AudioMixer {
 pub static AUDIO_MIXER: LazyLock<AudioMixer> = LazyLock::new(|| AudioMixer::new());
 
 #[tauri::command]
-pub async fn preview_audio_file(file_path: String) -> Result<(), String> {
-    println!("preview_audio_file");
+pub fn preview_audio_file(app: AppHandle, file_path: String) {
+    info!("preview_audio_file");
     AUDIO_MIXER
         .is_preview_playing
         .store(false, Ordering::SeqCst);
@@ -53,36 +59,31 @@ pub async fn preview_audio_file(file_path: String) -> Result<(), String> {
         *file_path_guard = file_path.to_string();
     }
     if AUDIO_MIXER.is_preview_queued.load(Ordering::SeqCst) {
-        println!("already queued");
-        return Ok(());
+        info!("audio preview already queued");
     };
     AUDIO_MIXER.is_preview_queued.store(true, Ordering::SeqCst);
-    loop {
-        if AUDIO_MIXER.is_preview_started.load(Ordering::SeqCst) {
-            // println!("looping");
-            // tokio::time::sleep(Duration::from_millis(50)).await;
-            continue;
-        };
-        AUDIO_MIXER.is_preview_queued.store(false, Ordering::SeqCst);
-        AUDIO_MIXER
-            .is_preview_canceled
-            .store(false, Ordering::SeqCst);
-
-        tauri::async_runtime::spawn_blocking(move || stream_audio_file())
-            .await
-            .map_err(|e| e.to_string())?
-            .map_err(|e| {
-                println!("Error trying to preview audio file: {}", e);
-                AUDIO_MIXER
-                    .is_preview_playing
-                    .store(false, Ordering::SeqCst);
-                AUDIO_MIXER
-                    .is_preview_started
-                    .store(false, Ordering::SeqCst);
-                AUDIO_MIXER.is_preview_queued.store(false, Ordering::SeqCst);
-                e.to_string()
-            })?;
-        break;
+    while AUDIO_MIXER.is_preview_started.load(Ordering::SeqCst) {
+        thread::sleep(Duration::from_millis(50));
     }
-    Ok(())
+    AUDIO_MIXER.is_preview_queued.store(false, Ordering::SeqCst);
+    AUDIO_MIXER
+        .is_preview_canceled
+        .store(false, Ordering::SeqCst);
+
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Err(e) = stream_audio_file() {
+            warn!("Error trying to preview audio file: {:?}", e);
+            AUDIO_MIXER
+                .is_preview_playing
+                .store(false, Ordering::SeqCst);
+            AUDIO_MIXER
+                .is_preview_started
+                .store(false, Ordering::SeqCst);
+            AUDIO_MIXER.is_preview_queued.store(false, Ordering::SeqCst);
+            let _ = app.emit(
+                PREVIEW_AUDIO_ERROR_EVENT_NAME,
+                format!("Error trying to preview audio file: {e}"),
+            );
+        }
+    });
 }

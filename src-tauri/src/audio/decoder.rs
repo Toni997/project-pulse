@@ -1,28 +1,23 @@
-use anyhow::{Context, Result};
-use core::num;
-use ringbuf::traits::{Consumer, Observer, Producer, RingBuffer};
+use anyhow::{anyhow, Context, Result};
+use log::info;
+use ringbuf::traits::{Observer, Producer};
 use rubato::Resampler;
 use std::collections::HashMap;
 use std::io::Cursor;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{LazyLock, RwLock};
 use std::{f32, fs};
-use symphonia::core::audio::{
-    AudioBuffer, AudioBufferRef, Channels, SampleBuffer, Signal, SignalSpec,
-};
-use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
-use symphonia::core::conv::IntoSample;
+use symphonia::core::audio::{SampleBuffer, SignalSpec};
+use symphonia::core::codecs::DecoderOptions;
 use symphonia::core::formats::{FormatOptions, FormatReader};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::{Hint, ProbeResult};
-use symphonia::core::sample;
+use symphonia::core::probe::Hint;
 use symphonia::default::{get_codecs, get_probe};
-use tauri::{AppHandle, Emitter};
 
 use crate::audio::engine::AUDIO_ENGINE;
 use crate::audio::mixer::AUDIO_MIXER;
-use crate::audio::resampler::{resampler, resampler_2};
+use crate::audio::resampler::resampler_2;
 
 const MINIMUM_BUFFER_SPACE: usize = 5000;
 
@@ -30,13 +25,13 @@ pub static DECODED_AUDIO_CACHE: LazyLock<RwLock<HashMap<String, Vec<f32>>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
 
 pub fn get_media_source_stream_for_caching(file_path: &str) -> Result<MediaSourceStream> {
-    let file_bytes = fs::read(file_path).context("failed to read file into memory")?;
+    let file_bytes = fs::read(file_path).context("Couldn't open file")?;
     let cursor = Cursor::new(file_bytes);
     Ok(MediaSourceStream::new(Box::new(cursor), Default::default()))
 }
 
 pub fn get_media_source_stream(file_path: &str) -> Result<MediaSourceStream> {
-    let src = std::fs::File::open(file_path)?;
+    let src = std::fs::File::open(file_path).context("Couldn't open file")?;
     Ok(MediaSourceStream::new(Box::new(src), Default::default()))
 }
 
@@ -51,20 +46,22 @@ pub fn get_format_reader(file_path: &str) -> Result<Box<dyn FormatReader>> {
     let fmt_opts: FormatOptions = Default::default();
     let meta_opts: MetadataOptions = Default::default();
 
-    let probed = get_probe().format(&hint, mss, &fmt_opts, &meta_opts)?;
+    let probed = get_probe()
+        .format(&hint, mss, &fmt_opts, &meta_opts)
+        .context("Unknown audio format")?;
 
     Ok(probed.format)
 }
 
 pub fn stream_audio_file() -> Result<()> {
     AUDIO_MIXER.is_preview_started.store(true, Ordering::SeqCst);
-    println!("stream_audio_file");
+    info!("stream_audio_file");
     let file_path = AUDIO_MIXER
         .preview_file
         .lock()
-        .map_err(|_| anyhow::anyhow!("failed to acquire preview file lock"))?
+        .map_err(|_| anyhow!("failed to acquire preview file lock"))?
         .clone();
-    println!("starting streaming {}", file_path);
+    info!("starting streaming {}", file_path);
 
     AUDIO_MIXER
         .is_preview_playing
@@ -73,7 +70,7 @@ pub fn stream_audio_file() -> Result<()> {
     let mut preview_producer_guard = AUDIO_ENGINE
         .preview_producer
         .lock()
-        .map_err(|_| anyhow::anyhow!("Could not lock preview producer"))?;
+        .map_err(|_| anyhow!("Could not lock preview producer"))?;
     let preview_producer = preview_producer_guard
         .as_mut()
         .context("Preview producer missing or stream already started")?;
@@ -83,8 +80,8 @@ pub fn stream_audio_file() -> Result<()> {
     let track = format_reader
         .default_track()
         .context("no default track found")?;
-    println!("Track sample rate: {:?}", track.codec_params.sample_rate);
-    println!("Track channels: {:?}", track.codec_params.channels);
+    info!("Track sample rate: {:?}", track.codec_params.sample_rate);
+    info!("Track channels: {:?}", track.codec_params.channels);
 
     let track_id = track.id;
     let track_sample_rate = track
@@ -97,15 +94,15 @@ pub fn stream_audio_file() -> Result<()> {
     let dec_opts: DecoderOptions = Default::default();
     let mut decoder = get_codecs()
         .make(&track.codec_params, &dec_opts)
-        .context("unsupported codec")?;
+        .context("Unsupported codec")?;
 
     let mut resampler = resampler_2(
         track_sample_rate as usize,
         AUDIO_ENGINE.sample_rate(),
         AUDIO_ENGINE.num_channels(),
-    );
+    )?;
 
-    println!(
+    info!(
         "{} {} {}",
         track_sample_rate,
         AUDIO_ENGINE.sample_rate(),
@@ -149,7 +146,7 @@ pub fn stream_audio_file() -> Result<()> {
                     if input_buffer[0].len() == resampler.input_frames_next() {
                         resampler
                             .process_into_buffer(&input_buffer, &mut output_buffer, None)
-                            .map_err(|e| anyhow::anyhow!(e))?;
+                            .map_err(|e| anyhow!(e))?;
                         for frame in 0..num_output_frames {
                             for ch in 0..num_track_channels {
                                 interleaved_output[frame * num_track_channels + ch] =
@@ -179,7 +176,7 @@ pub fn stream_audio_file() -> Result<()> {
         }
         resampler
             .process_into_buffer(&input_buffer, &mut output_buffer, None)
-            .map_err(|e| anyhow::anyhow!(e))?;
+            .map_err(|e| anyhow!(e))?;
         for frame in 0..num_output_frames {
             for ch in 0..num_track_channels {
                 interleaved_output[frame * num_track_channels + ch] = output_buffer[ch][frame];
