@@ -23,10 +23,11 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-symphonia = { version = "0.5.4", features = ["mp3", "wav", "aiff", "flac"] }
-cpal = "0.16.0"
+symphonia = { version = "0.5.5", features = ["mp3", "wav", "aiff", "flac"] }
+cpal = { version = "0.17.0", features = ["asio"] }
 tauri-plugin-dialog = "2"
 once_cell = "1.21.3"
 tauri-plugin-fs = "2"
 walkdir = "2.5.0"
 rubato = "0.16.2"
+anyhow = "1.0.100"

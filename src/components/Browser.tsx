@@ -6,6 +6,7 @@ import {
   Box,
   TreeNodeData,
   Divider,
+  Tooltip,
 } from '@mantine/core'
 import { open } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
@@ -25,7 +26,6 @@ const Browser = () => {
         directory: true,
         multiple: false,
       })
-
       if (!selected) return
 
       setIsLoading(true)
@@ -39,9 +39,9 @@ const Browser = () => {
     }
   }
 
-  const preview_audio_click = (filePath: string) => {
+  const preview_audio_click = async (filePath: string) => {
     try {
-      invoke('preview_audio_file', { filePath })
+      await invoke('preview_audio_file', { filePath })
     } catch (err: any) {
       console.log(err)
     }
@@ -65,25 +65,34 @@ const Browser = () => {
             const nodeExpanded = node as TreeNodeDataExpanded
             return (
               <>
-                <span
-                  className={`flex gap-1 items-center hover:bg-gray-200 ${elementProps.className}`}
-                  onClick={
-                    nodeExpanded.is_dir
-                      ? elementProps.onClick
-                      : () => preview_audio_click(nodeExpanded.value)
-                  }
-                >
-                  {nodeExpanded.is_dir ? (
-                    <FolderIcon className='shrink-0' size={18} weight='light' />
-                  ) : (
-                    <FileAudioIcon
-                      className='shrink-0'
-                      size={18}
-                      weight='light'
-                    />
-                  )}
-                  <span>{node.label}</span>
-                </span>
+                <Tooltip label={node.label} position='right' withArrow>
+                  <span
+                    className={`flex gap-1 items-center hover:bg-gray-200 ${elementProps.className}`}
+                    onClick={
+                      nodeExpanded.is_dir
+                        ? elementProps.onClick
+                        : () => preview_audio_click(nodeExpanded.value)
+                    }
+                  >
+                    {nodeExpanded.is_dir ? (
+                      <FolderIcon
+                        className='shrink-0'
+                        size={18}
+                        weight='light'
+                      />
+                    ) : (
+                      <FileAudioIcon
+                        className='shrink-0'
+                        size={18}
+                        weight='light'
+                      />
+                    )}
+
+                    <span className='text-ellipsis whitespace-nowrap overflow-hidden'>
+                      {node.label}
+                    </span>
+                  </span>
+                </Tooltip>
                 <Divider />
               </>
             )

@@ -12,6 +12,7 @@
   "dependencies": {
     "@mantine/core": "^8.3.3",
     "@mantine/hooks": "^8.3.3",
+    "@mantine/notifications": "^8.3.10",
     "@phosphor-icons/react": "^2.1.10",
     "@tailwindcss/vite": "^4.1.14",
     "@tauri-apps/api": "^2.8.0",

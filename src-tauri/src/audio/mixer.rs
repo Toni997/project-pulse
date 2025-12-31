@@ -2,18 +2,23 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, LazyLock, Mutex,
 };
+use std::time::Duration;
 
 use ringbuf::traits::Consumer;
-use tauri::async_runtime::JoinHandle;
+use tauri::{async_runtime::JoinHandle, AppHandle};
 
-use crate::audio::{arrangement::Arrangement, decoder::stream_audio_file, engine::PREVIEW_BUFFER};
+use crate::audio::{arrangement::Arrangement, decoder::stream_audio_file, engine::AUDIO_ENGINE};
 
 pub struct AudioMixer {
     arrangements: Vec<Arrangement>,
     active_playlist: usize,
     playlist_offset: usize,
     pub is_preview_playing: AtomicBool,
-    pub is_playing: bool,
+    pub is_playing: AtomicBool,
+    pub is_preview_started: AtomicBool,
+    pub is_preview_queued: AtomicBool,
+    pub is_preview_canceled: AtomicBool,
+    pub preview_file: Mutex<String>,
 }
 
 impl AudioMixer {
@@ -23,40 +28,61 @@ impl AudioMixer {
             active_playlist: 0,
             playlist_offset: 0,
             is_preview_playing: AtomicBool::new(false),
-            is_playing: false,
+            is_playing: AtomicBool::new(false),
+            is_preview_started: AtomicBool::new(false),
+            is_preview_queued: AtomicBool::new(false),
+            is_preview_canceled: AtomicBool::new(false),
+            preview_file: Mutex::new(String::from("")),
         }
     }
 }
 
 pub static AUDIO_MIXER: LazyLock<AudioMixer> = LazyLock::new(|| AudioMixer::new());
 
-pub static PREVIEW_AUDIO_RUNNING: AtomicBool = AtomicBool::new(false);
-pub static PREVIEW_ALREADY_QUEUED: AtomicBool = AtomicBool::new(false);
-pub static PREVIEW_CANCEL_FLAG: AtomicBool = AtomicBool::new(false);
-pub static PREVIEW_AUDIO_PATH: LazyLock<Mutex<String>> =
-    LazyLock::new(|| Mutex::new(String::from("")));
-
 #[tauri::command]
-pub fn preview_audio_file(file_path: String) {
+pub async fn preview_audio_file(file_path: String) -> Result<(), String> {
+    println!("preview_audio_file");
     AUDIO_MIXER
         .is_preview_playing
         .store(false, Ordering::SeqCst);
-    PREVIEW_CANCEL_FLAG.store(true, Ordering::SeqCst);
-    let mut file_path_guard = PREVIEW_AUDIO_PATH.lock().unwrap(); // lock for mutable access
-    *file_path_guard = file_path.to_string();
-    if PREVIEW_ALREADY_QUEUED.load(Ordering::SeqCst) {
-        return;
+    AUDIO_MIXER
+        .is_preview_canceled
+        .store(true, Ordering::SeqCst);
+    {
+        let mut file_path_guard = AUDIO_MIXER.preview_file.lock().unwrap();
+        *file_path_guard = file_path.to_string();
+    }
+    if AUDIO_MIXER.is_preview_queued.load(Ordering::SeqCst) {
+        println!("already queued");
+        return Ok(());
     };
-    PREVIEW_ALREADY_QUEUED.store(true, Ordering::SeqCst);
+    AUDIO_MIXER.is_preview_queued.store(true, Ordering::SeqCst);
     loop {
-        if PREVIEW_AUDIO_RUNNING.load(Ordering::SeqCst) {
+        if AUDIO_MIXER.is_preview_started.load(Ordering::SeqCst) {
+            // println!("looping");
+            // tokio::time::sleep(Duration::from_millis(50)).await;
             continue;
         };
-        PREVIEW_ALREADY_QUEUED.store(false, Ordering::SeqCst);
-        PREVIEW_CANCEL_FLAG.store(false, Ordering::SeqCst);
-        tauri::async_runtime::spawn_blocking(move || {
-            stream_audio_file();
-        });
+        AUDIO_MIXER.is_preview_queued.store(false, Ordering::SeqCst);
+        AUDIO_MIXER
+            .is_preview_canceled
+            .store(false, Ordering::SeqCst);
+
+        tauri::async_runtime::spawn_blocking(move || stream_audio_file())
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| {
+                println!("Error trying to preview audio file: {}", e);
+                AUDIO_MIXER
+                    .is_preview_playing
+                    .store(false, Ordering::SeqCst);
+                AUDIO_MIXER
+                    .is_preview_started
+                    .store(false, Ordering::SeqCst);
+                AUDIO_MIXER.is_preview_queued.store(false, Ordering::SeqCst);
+                e.to_string()
+            })?;
         break;
     }
+    Ok(())
 }

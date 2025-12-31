@@ -1,109 +1,189 @@
-use crate::audio::mixer::AUDIO_MIXER;
-use crate::core::constants::{DRIVER_BUFFER_SIZE, ENGINE_BUFFER_MUTLIPLIER};
+use crate::core::constants::{BUFFER_SIZE_DEFAULT, NUM_CHANNELS_DEFAULT};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{BufferSize, Device, Host, Stream, StreamConfig};
-use ringbuf::traits::{Consumer, Observer};
-use ringbuf::HeapRb;
+use cpal::{
+    available_hosts, Device, FromSample, Host, HostId, Sample, SampleFormat, SampleRate,
+    SizedSample, Stream, StreamConfig,
+};
+use ringbuf::traits::{Consumer, Observer, Split};
+use ringbuf::{HeapCons, HeapProd, HeapRb};
+use serde::de::value::U64Deserializer;
 use std::collections::HashMap;
-use std::sync::atomic::Ordering;
-use std::sync::{LazyLock, RwLock};
-
-pub static mut ENGINE_BUFFER: LazyLock<HeapRb<f32>> = LazyLock::new(|| HeapRb::new(4096 as usize));
-
-pub static mut PREVIEW_BUFFER: LazyLock<HeapRb<f32>> =
-    LazyLock::new(|| HeapRb::new(44100 as usize));
+use std::fmt::{Debug, Display};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{LazyLock, Mutex};
 
 pub struct AudioEngine {
     host: Host,
     device: Device,
     config: StreamConfig,
-    stream: Option<Stream>,
+    sample_format: SampleFormat,
+    stream: Mutex<Option<Stream>>,
+    pub engine_producer: Mutex<Option<HeapProd<f32>>>,
+    pub preview_producer: Mutex<Option<HeapProd<f32>>>,
+    engine_consumer: Mutex<Option<HeapCons<f32>>>,
+    preview_consumer: Mutex<Option<HeapCons<f32>>>,
 }
 
 impl AudioEngine {
     pub fn new() -> Self {
+        let hosts = available_hosts();
+        println!("{hosts:?}");
+
         let host = cpal::default_host();
+        // let host = if hosts.contains(&HostId::Asio) {
+        //     println!("ASIO host available, attempting to use it.");
+        //     cpal::host_from_id(HostId::Asio).unwrap_or_else(|_| cpal::default_host())
+        // } else {
+        //     cpal::default_host()
+        // };
+
         let device = host
             .default_output_device()
             .expect("No output device available");
-        let supported_config = device.default_output_config().unwrap();
-        let mut config: StreamConfig = supported_config.config();
-        config.buffer_size = BufferSize::Fixed(DRIVER_BUFFER_SIZE);
 
-        let supported_configs_range = device.supported_output_configs().unwrap();
-        println!("Supported output configs:");
-        for config in supported_configs_range {
-            let buffer_size = config.buffer_size();
-            match buffer_size {
-                cpal::SupportedBufferSize::Range { min, max } => {
-                    println!(
-                    "Channels: {:<2} | Sample rate: {:<6}-{:>6} | Buffer size range: {}–{} frames",
-                    config.channels(),
-                    config.min_sample_rate().0,
-                    config.max_sample_rate().0,
-                    min,
-                    max
-                );
-                }
-                cpal::SupportedBufferSize::Unknown => {
-                    println!(
-                    "Channels: {:<2} | Sample rate: {:<6}-{:>6} | Buffer size: unknown (system decides)",
-                    config.channels(),
-                    config.min_sample_rate().0,
-                    config.max_sample_rate().0,
-                );
-                }
+        println!("Host: {:?}", host.id());
+        println!(
+            "Output device: {}",
+            device.name().unwrap_or("Unknown".to_string())
+        );
+
+        // Print all supported configs for debugging
+        if let Ok(configs) = device.supported_output_configs() {
+            println!("Supported configs:");
+            for (i, config) in configs.enumerate() {
+                println!("  {}: {:?}", i, config);
             }
         }
 
-        println!("Output stream sample rate: {}", config.sample_rate.0);
-        println!("Output stream channels: {}", config.channels);
+        // Try to find an f32 config, otherwise fall back to default (which might fail if not f32)
+        let supported_config = device.default_output_config().unwrap();
+        let sample_format = supported_config.sample_format();
+        let mut config: StreamConfig = supported_config.config();
+        config.buffer_size = cpal::BufferSize::Fixed(BUFFER_SIZE_DEFAULT as u32);
+        // config.sample_rate = 48000;
+        config.channels = NUM_CHANNELS_DEFAULT as u16;
+
+        match supported_config.buffer_size() {
+            cpal::SupportedBufferSize::Range { min, max } => {
+                println!("Supported buffer size range: {} - {}", min, max);
+            }
+            cpal::SupportedBufferSize::Unknown => {
+                println!("Supported buffer size: Unknown");
+            }
+        }
+
+        println!(
+            "AudioEngine initialized: {} Hz, {} channels, Format: {:?}",
+            config.sample_rate, config.channels, sample_format
+        );
 
         Self {
             host,
             device,
             config,
-            stream: None,
+            sample_format,
+            stream: Mutex::new(None),
+            engine_producer: Mutex::new(None),
+            preview_producer: Mutex::new(None),
+            engine_consumer: Mutex::new(None),
+            preview_consumer: Mutex::new(None),
         }
     }
 
-    pub fn start(&mut self) {
-        let stream = self
-            .device
-            .build_output_stream(
-                &self.config,
-                move |output: &mut [f32], _| unsafe {
-                    output.fill(0.0);
-                    if AUDIO_MIXER.is_playing {
-                        ENGINE_BUFFER.pop_slice(output);
-                    }
-                    if AUDIO_MIXER.is_preview_playing.load(Ordering::SeqCst) {
-                        let mut preview_buf = vec![0.0f32; output.len()];
-                        PREVIEW_BUFFER.pop_slice(&mut preview_buf);
-                        for (out, prev) in output.iter_mut().zip(preview_buf.iter()) {
-                            *out += *prev;
-                        }
-                    }
-                },
-                move |err| {
-                    eprintln!("Stream error: {}", err);
-                },
-                None,
-            )
-            .unwrap();
+    pub fn start(&self) {
+        // Create and split the ring buffers
+        let engine_rb = HeapRb::<f32>::new(4096);
+        let (engine_prod, engine_cons) = engine_rb.split();
 
-        stream.play().unwrap();
-        self.stream = Some(stream);
+        let preview_rb = HeapRb::<f32>::new(44100);
+        let (preview_prod, preview_cons) = preview_rb.split();
+
+        *self.engine_producer.lock().unwrap() = Some(engine_prod);
+        *self.preview_producer.lock().unwrap() = Some(preview_prod);
+        *self.engine_consumer.lock().unwrap() = Some(engine_cons);
+        *self.preview_consumer.lock().unwrap() = Some(preview_cons);
+
+        match self.sample_format {
+            cpal::SampleFormat::I8 => self.build_output_stream::<i8>(),
+            cpal::SampleFormat::I16 => self.build_output_stream::<i16>(),
+            cpal::SampleFormat::I24 => self.build_output_stream::<i32>(),
+            cpal::SampleFormat::I32 => self.build_output_stream::<i32>(),
+            cpal::SampleFormat::I64 => self.build_output_stream::<i64>(),
+            cpal::SampleFormat::U8 => self.build_output_stream::<u8>(),
+            cpal::SampleFormat::U16 => self.build_output_stream::<u16>(),
+            cpal::SampleFormat::U24 => self.build_output_stream::<u32>(),
+            cpal::SampleFormat::U32 => self.build_output_stream::<u32>(),
+            cpal::SampleFormat::U64 => self.build_output_stream::<u64>(),
+            cpal::SampleFormat::F32 => self.build_output_stream::<f32>(),
+            cpal::SampleFormat::F64 => self.build_output_stream::<f64>(),
+            _ => panic!("Unsupported sample format"),
+        };
     }
 
     pub fn sample_rate(&self) -> usize {
-        self.config.sample_rate.0 as usize
+        self.config.sample_rate as usize
     }
 
     pub fn num_channels(&self) -> usize {
         self.config.channels as usize
     }
+
+    fn build_output_stream<SampleType>(&self)
+    where
+        SampleType: Sample + SizedSample + FromSample<f32> + Copy + Send + Debug + Display,
+    {
+        // Pre-allocate a scratch buffer to avoid allocation in the callback
+        let mut mixer_temp_output = vec![0.0f32; 4096];
+        let mut preview_temp_output = vec![0.0f32; 4096];
+
+        let mut engine_consumer = self
+            .engine_consumer
+            .lock()
+            .expect("Could not lock engine consumer")
+            .take()
+            .expect("Engine consumer missing or stream already started");
+        let mut preview_consumer = self
+            .preview_consumer
+            .lock()
+            .expect("Could not lock preview consumer")
+            .take()
+            .expect("Preview consumer missing or stream already started");
+
+        let stream = self
+            .device
+            .build_output_stream(
+                &self.config,
+                move |output: &mut [SampleType], _| {
+                    if mixer_temp_output.len() < output.len() {
+                        mixer_temp_output.resize(output.len(), 0.0);
+                    }
+                    if preview_temp_output.len() < output.len() {
+                        preview_temp_output.resize(output.len(), 0.0);
+                    }
+
+                    let engine_slice = &mut mixer_temp_output[..output.len()];
+                    let preview_slice = &mut preview_temp_output[..output.len()];
+
+                    engine_slice.fill(0.0);
+                    preview_slice.fill(0.0);
+
+                    engine_consumer.pop_slice(engine_slice);
+                    preview_consumer.pop_slice(preview_slice);
+
+                    for i in 0..output.len() {
+                        let mixed = engine_slice[i] + preview_slice[i];
+                        output[i] = SampleType::from_sample::<f32>(mixed);
+                    }
+                },
+                move |err| eprintln!("Stream error: {}", err),
+                None,
+            )
+            .expect("Failed to build output stream");
+
+        stream.play().expect("Failed to play stream");
+        *self.stream.lock().unwrap() = Some(stream);
+    }
 }
 
-pub static mut AUDIO_ENGINE: LazyLock<AudioEngine> = LazyLock::new(|| AudioEngine::new());
+pub static AUDIO_ENGINE: LazyLock<AudioEngine> = LazyLock::new(|| AudioEngine::new());
