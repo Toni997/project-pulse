@@ -1,7 +1,10 @@
 mod audio;
 mod core;
 
-use crate::{audio::mixer::preview_audio_file, core::fs_utils::scan_directory_tree};
+use crate::{
+    audio::mixer::{preview_audio_file, stop_audio},
+    core::fs_utils::scan_directory_tree,
+};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -17,7 +20,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             preview_audio_file,
-            scan_directory_tree
+            scan_directory_tree,
+            stop_audio,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

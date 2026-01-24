@@ -87,3 +87,10 @@ pub fn preview_audio_file(app: AppHandle, file_path: String) {
         }
     });
 }
+
+#[tauri::command]
+pub fn stop_audio() {
+    AUDIO_MIXER
+        .is_preview_canceled
+        .store(true, Ordering::SeqCst);
+}

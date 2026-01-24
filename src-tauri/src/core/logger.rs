@@ -1,9 +1,8 @@
+use anyhow::Result;
 use log::info;
 
-pub fn setup_logger() -> Result<(), Box<dyn std::error::Error>> {
-    // Configure logger at runtime
+pub fn setup_logger() -> Result<()> {
     fern::Dispatch::new()
-        // Perform allocation-free log formatting
         .format(|out, message, record| {
             out.finish(format_args!(
                 "[{} {} {}] {}",
@@ -16,18 +15,13 @@ pub fn setup_logger() -> Result<(), Box<dyn std::error::Error>> {
                 message
             ))
         })
-        // Add blanket level filter -
         .level(log::LevelFilter::Debug)
-        // - and per-module overrides
         .level_for("hyper", log::LevelFilter::Info)
-        // Output to stdout, files, and other Dispatch configurations
         .chain(std::io::stdout())
         .chain(fern::log_file("output.log")?)
-        // Apply globally
         .apply()?;
 
-    // and log using log crate macros!
-    info!("hello, world!");
+    info!("Logger initialized");
 
     Ok(())
 }

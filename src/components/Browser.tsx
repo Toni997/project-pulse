@@ -12,12 +12,17 @@ import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
 import { notifications } from '@mantine/notifications'
-import { FolderIcon, FileAudioIcon } from '@phosphor-icons/react'
+import {
+  FolderIcon,
+  FileAudioIcon,
+  CaretRightIcon,
+} from '@phosphor-icons/react'
 import {
   PREVIEW_AUDIO_ERROR_EVENT_NAME,
   PREVIEW_AUDIO_FUNC_NAME,
   SCAN_DIRECTORY_TREE_FUNC_NAME,
 } from '../helpers/constants'
+import { ContextMenu } from 'radix-ui'
 
 interface TreeNodeDataExpanded extends TreeNodeData {
   is_dir: boolean
@@ -26,11 +31,11 @@ interface TreeNodeDataExpanded extends TreeNodeData {
 const Browser = () => {
   const [data, setData] = useState<TreeNodeData[] | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  console.log('UPDATED')
 
   useEffect(() => {
     const unlisten = listen(PREVIEW_AUDIO_ERROR_EVENT_NAME, (event) => {
       const errorText: string = event.payload as string
-      console.error('Preview failed:', errorText)
       notifications.show({
         color: 'red',
         title: 'Ooops!',
@@ -80,37 +85,81 @@ const Browser = () => {
         <Tree
           data={data}
           levelOffset={18}
-          renderNode={({ node, expanded, hasChildren, elementProps }) => {
+          renderNode={({ node, elementProps }) => {
             const nodeExpanded = node as TreeNodeDataExpanded
             return (
               <>
-                <Tooltip label={node.label} position='right' withArrow>
-                  <span
-                    className={`flex gap-1 items-center hover:bg-gray-200 ${elementProps.className}`}
-                    onClick={
-                      nodeExpanded.is_dir
-                        ? elementProps.onClick
-                        : () => previewAudioClick(nodeExpanded.value)
-                    }
-                  >
-                    {nodeExpanded.is_dir ? (
-                      <FolderIcon
-                        className='shrink-0'
-                        size={18}
-                        weight='light'
-                      />
-                    ) : (
-                      <FileAudioIcon
-                        className='shrink-0'
-                        size={18}
-                        weight='light'
-                      />
-                    )}
-                    <span className='text-ellipsis whitespace-nowrap overflow-hidden'>
-                      {node.label}
-                    </span>
-                  </span>
-                </Tooltip>
+                <ContextMenu.Root>
+                  <ContextMenu.Trigger className='ContextMenuTrigger'>
+                    <Tooltip label={node.label} position='right' withArrow>
+                      <span
+                        className={`flex gap-1 items-center hover:bg-gray-200 ${elementProps.className}`}
+                        onClick={
+                          nodeExpanded.is_dir
+                            ? elementProps.onClick
+                            : () => previewAudioClick(nodeExpanded.value)
+                        }
+                      >
+                        {nodeExpanded.is_dir ? (
+                          <FolderIcon
+                            className='shrink-0'
+                            size={18}
+                            weight='light'
+                          />
+                        ) : (
+                          <FileAudioIcon
+                            className='shrink-0'
+                            size={18}
+                            weight='light'
+                          />
+                        )}
+                        <span className='text-ellipsis whitespace-nowrap overflow-hidden'>
+                          {node.label}
+                        </span>
+                      </span>
+                    </Tooltip>
+                  </ContextMenu.Trigger>
+                  {!nodeExpanded.is_dir && (
+                    <ContextMenu.Content className='ContextMenuContent'>
+                      <ContextMenu.Item className='ContextMenuItem'>
+                        Assign to new Audio Track
+                      </ContextMenu.Item>
+                      <ContextMenu.Sub>
+                        <ContextMenu.SubTrigger className='ContextMenuSubTrigger'>
+                          Assign to track
+                          <div className='RightSlot'>
+                            <CaretRightIcon />
+                          </div>
+                        </ContextMenu.SubTrigger>
+                        <ContextMenu.SubContent className='ContextMenuSubContent'>
+                          <ContextMenu.Item className='ContextMenuItem'>
+                            Track 1
+                          </ContextMenu.Item>
+                        </ContextMenu.SubContent>
+                      </ContextMenu.Sub>
+                      <ContextMenu.Separator className='ContextMenuSeparator' />
+                      <ContextMenu.Item className='ContextMenuItem'>
+                        Add to Favorites
+                      </ContextMenu.Item>
+                      <ContextMenu.Item className='ContextMenuItem'>
+                        Add to New Group
+                      </ContextMenu.Item>
+                      <ContextMenu.Sub>
+                        <ContextMenu.SubTrigger className='ContextMenuSubTrigger'>
+                          Add to Group
+                          <div className='RightSlot'>
+                            <CaretRightIcon />
+                          </div>
+                        </ContextMenu.SubTrigger>
+                        <ContextMenu.SubContent className='ContextMenuSubContent'>
+                          <ContextMenu.Item className='ContextMenuItem'>
+                            Group 1
+                          </ContextMenu.Item>
+                        </ContextMenu.SubContent>
+                      </ContextMenu.Sub>
+                    </ContextMenu.Content>
+                  )}
+                </ContextMenu.Root>
                 <Divider />
               </>
             )
