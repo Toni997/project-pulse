@@ -1,7 +1,9 @@
 pub mod arrangement;
 pub mod decoder;
 pub mod engine;
-pub mod mixer;
+pub mod timeline_mixer;
+pub mod preview_mixer;
 pub mod resampler;
-pub mod timeline_event;
 pub mod track;
+pub mod track_clip;
+pub mod transport;

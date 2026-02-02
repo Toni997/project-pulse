@@ -1,4 +1,5 @@
 export const PREVIEW_AUDIO_ERROR_EVENT_NAME = 'preview-audio-error'
-export const PREVIEW_AUDIO_FUNC_NAME = 'preview_audio_file'
-export const SCAN_DIRECTORY_TREE_FUNC_NAME = 'scan_directory_tree'
-export const STOP_AUDIO_FUNC_NAME = 'stop_audio'
+
+export const PREVIEW_PLAY = 'preview_play'
+export const FS_SCAN_DIRECTORY_TREE = 'fs_scan_directory_tree'
+export const TIMELINE_STOP = 'timeline_stop'

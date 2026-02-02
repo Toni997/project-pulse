@@ -1,13 +1,11 @@
-import { useEffect, useState } from 'react'
 import {
-  Tree,
-  LoadingOverlay,
-  Button,
-  Box,
-  TreeNodeData,
-  Divider,
-  Tooltip,
-} from '@mantine/core'
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useCallback,
+} from 'react'
+import { LoadingOverlay, Button, Box, Divider, Tooltip } from '@mantine/core'
 import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
@@ -19,19 +17,71 @@ import {
 } from '@phosphor-icons/react'
 import {
   PREVIEW_AUDIO_ERROR_EVENT_NAME,
-  PREVIEW_AUDIO_FUNC_NAME,
-  SCAN_DIRECTORY_TREE_FUNC_NAME,
+  PREVIEW_PLAY,
+  FS_SCAN_DIRECTORY_TREE,
 } from '../helpers/constants'
-import { ContextMenu } from 'radix-ui'
+import { NodeRendererProps, Tree } from 'react-arborist'
+import type BrowserNode from '../types/BrowserNode'
+import { Menu, Item, Separator, Submenu, useContextMenu } from 'react-contexify'
+import 'react-contexify/ReactContexify.css'
 
-interface TreeNodeDataExpanded extends TreeNodeData {
-  is_dir: boolean
+const Node = ({
+  node,
+  style,
+  showContextMenu,
+}: NodeRendererProps<BrowserNode> & { showContextMenu: (e: any) => void }) => {
+  const previewAudioClick = async (filePath: string) => {
+    invoke(PREVIEW_PLAY, { filePath })
+  }
+
+  return (
+    <>
+      <Tooltip label={node.data.label} position='right' withArrow>
+        <span
+          style={style}
+          className='flex gap-1 items-center hover:bg-gray-200 cursor-pointer'
+          onContextMenu={showContextMenu}
+          onClick={
+            node.data.is_dir
+              ? () => node.toggle()
+              : () => previewAudioClick(node.data.value)
+          }
+        >
+          {node.data.is_dir ? (
+            <FolderIcon className='shrink-0' size={18} weight='light' />
+          ) : (
+            <FileAudioIcon className='shrink-0' size={18} weight='light' />
+          )}
+          <span className='text-ellipsis whitespace-nowrap overflow-hidden'>
+            {node.data.label}
+          </span>
+        </span>
+      </Tooltip>
+      <Divider />
+    </>
+  )
 }
 
 const Browser = () => {
-  const [data, setData] = useState<TreeNodeData[] | null>(null)
+  const [data, setData] = useState<BrowserNode[] | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  console.log('UPDATED')
+  const fileBrowserRef = useRef<HTMLDivElement>(null)
+  const [height, setHeight] = useState(0)
+  const { show } = useContextMenu({
+    id: 'menu',
+  })
+
+  useLayoutEffect(() => {
+    if (!fileBrowserRef.current) return
+
+    const observer = new ResizeObserver((entries) => {
+      setHeight(entries[0].contentRect.height)
+    })
+
+    observer.observe(fileBrowserRef.current)
+
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     const unlisten = listen(PREVIEW_AUDIO_ERROR_EVENT_NAME, (event) => {
@@ -55,117 +105,66 @@ const Browser = () => {
         multiple: false,
       })
       if (!selected) return
-
       setIsLoading(true)
-      const temp: TreeNodeData[] = await invoke(SCAN_DIRECTORY_TREE_FUNC_NAME, {
+      const temp: BrowserNode[] = await invoke(FS_SCAN_DIRECTORY_TREE, {
         path: selected,
       })
       setData(temp)
-      setIsLoading(false)
+      // invoke('abcd')
     } catch (err) {
-      console.error('Error selecting folder:', err)
+      notifications.show({
+        color: 'red',
+        title: 'Ooops!',
+        message: 'Error selecting folder',
+      })
+      console.error(`Error selecting folder`, err)
+    } finally {
+      setIsLoading(false)
     }
   }
 
-  const previewAudioClick = async (filePath: string) => {
-    invoke(PREVIEW_AUDIO_FUNC_NAME, { filePath })
-  }
+  const nodeRenderer = useCallback((props: NodeRendererProps<BrowserNode>) => {
+    return <Node {...props} showContextMenu={(e: any) => show({ event: e })} />
+  }, [])
 
   return (
-    <Box pos='relative' className='p-2'>
+    <Box pos='relative' className='flex flex-col w-full h-full'>
       <LoadingOverlay
         visible={isLoading}
         zIndex={1000}
         overlayProps={{ radius: 'sm', blur: 2 }}
       />
-      <Button onClick={handleSelectFolder} className='mb-2'>
-        Select folder
-      </Button>
-      {data && !isLoading && (
-        <Tree
-          data={data}
-          levelOffset={18}
-          renderNode={({ node, elementProps }) => {
-            const nodeExpanded = node as TreeNodeDataExpanded
-            return (
-              <>
-                <ContextMenu.Root>
-                  <ContextMenu.Trigger className='ContextMenuTrigger'>
-                    <Tooltip label={node.label} position='right' withArrow>
-                      <span
-                        className={`flex gap-1 items-center hover:bg-gray-200 ${elementProps.className}`}
-                        onClick={
-                          nodeExpanded.is_dir
-                            ? elementProps.onClick
-                            : () => previewAudioClick(nodeExpanded.value)
-                        }
-                      >
-                        {nodeExpanded.is_dir ? (
-                          <FolderIcon
-                            className='shrink-0'
-                            size={18}
-                            weight='light'
-                          />
-                        ) : (
-                          <FileAudioIcon
-                            className='shrink-0'
-                            size={18}
-                            weight='light'
-                          />
-                        )}
-                        <span className='text-ellipsis whitespace-nowrap overflow-hidden'>
-                          {node.label}
-                        </span>
-                      </span>
-                    </Tooltip>
-                  </ContextMenu.Trigger>
-                  {!nodeExpanded.is_dir && (
-                    <ContextMenu.Content className='ContextMenuContent'>
-                      <ContextMenu.Item className='ContextMenuItem'>
-                        Assign to new Audio Track
-                      </ContextMenu.Item>
-                      <ContextMenu.Sub>
-                        <ContextMenu.SubTrigger className='ContextMenuSubTrigger'>
-                          Assign to track
-                          <div className='RightSlot'>
-                            <CaretRightIcon />
-                          </div>
-                        </ContextMenu.SubTrigger>
-                        <ContextMenu.SubContent className='ContextMenuSubContent'>
-                          <ContextMenu.Item className='ContextMenuItem'>
-                            Track 1
-                          </ContextMenu.Item>
-                        </ContextMenu.SubContent>
-                      </ContextMenu.Sub>
-                      <ContextMenu.Separator className='ContextMenuSeparator' />
-                      <ContextMenu.Item className='ContextMenuItem'>
-                        Add to Favorites
-                      </ContextMenu.Item>
-                      <ContextMenu.Item className='ContextMenuItem'>
-                        Add to New Group
-                      </ContextMenu.Item>
-                      <ContextMenu.Sub>
-                        <ContextMenu.SubTrigger className='ContextMenuSubTrigger'>
-                          Add to Group
-                          <div className='RightSlot'>
-                            <CaretRightIcon />
-                          </div>
-                        </ContextMenu.SubTrigger>
-                        <ContextMenu.SubContent className='ContextMenuSubContent'>
-                          <ContextMenu.Item className='ContextMenuItem'>
-                            Group 1
-                          </ContextMenu.Item>
-                        </ContextMenu.SubContent>
-                      </ContextMenu.Sub>
-                    </ContextMenu.Content>
-                  )}
-                </ContextMenu.Root>
-                <Divider />
-              </>
-            )
-          }}
-        />
-      )}
+      <div className='shrink-0'>
+        <Button onClick={handleSelectFolder} className='w-full'>
+          Select folder
+        </Button>
+      </div>
+      <Menu id='menu'>
+        <Item>Assign to new Audio Track</Item>
+        <Submenu label='Assign to track'>
+          <Item id='reload'>Track 1</Item>
+        </Submenu>
+        <Separator />
+        <Item>Add to Favorites</Item>
+        <Item>Add to New Group</Item>
+        <Submenu label='Add to Group'>
+          <Item id='reload'>Group 1</Item>
+        </Submenu>
+      </Menu>
+      <div ref={fileBrowserRef} className='w-full h-full'>
+        {data && !isLoading && (
+          <Tree
+            initialData={data}
+            idAccessor='value'
+            openByDefault={false}
+            width='100%'
+            height={height}
+            indent={15}
+          >
+            {nodeRenderer}
+          </Tree>
+        )}
+      </div>
     </Box>
   )
 }

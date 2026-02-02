@@ -24,6 +24,8 @@
     "flexlayout-react": "^0.8.17",
     "radix-ui": "^1.4.3",
     "react": "^19.1.0",
+    "react-arborist": "^3.4.3",
+    "react-contexify": "^6.0.0",
     "react-dom": "^19.1.0",
     "react-konva": "^19.2.1",
     "tailwindcss": "^4.1.14",

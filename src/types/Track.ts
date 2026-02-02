@@ -1,7 +1,23 @@
-export default interface Track {
+export interface BaseTrack {
   name: string
-  volume: number
-  pan: number
+  volume: number // 0..1
+  pan: number // -1..1
   muted: boolean
-  audio_file: string
 }
+
+export interface SendAmount {
+  busId: string
+  amount: number // 0..1
+}
+
+export interface AudioTrack extends BaseTrack {
+  id: string
+  audioFile: string
+  sends: SendAmount[]
+}
+
+export interface BusTrack extends BaseTrack {
+  id: string
+}
+
+export interface MasterTrack extends BaseTrack {}

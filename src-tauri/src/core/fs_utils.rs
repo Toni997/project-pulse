@@ -33,12 +33,11 @@ fn scan_directory_tree_recursively(path: &PathBuf) -> Vec<FileEntry> {
     result
 }
 
-#[tauri::command]
-pub async fn scan_directory_tree(path: String) -> Vec<FileEntry> {
+pub async fn scan_directory_tree(path: String) -> Result<Vec<FileEntry>, String> {
     let path = PathBuf::from(path);
 
     let result =
         tauri::async_runtime::spawn_blocking(move || scan_directory_tree_recursively(&path)).await; // double `?` unwraps both Results
 
-    result.unwrap()
+    result.map_err(|e| e.to_string())
 }

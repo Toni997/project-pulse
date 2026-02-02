@@ -16,8 +16,8 @@ use symphonia::core::probe::Hint;
 use symphonia::default::{get_codecs, get_probe};
 
 use crate::audio::engine::AUDIO_ENGINE;
-use crate::audio::mixer::AUDIO_MIXER;
-use crate::audio::resampler::resampler_2;
+use crate::audio::preview_mixer::PREVIEW_MIXER;
+use crate::audio::resampler::create_preview_resampler;
 
 const MINIMUM_BUFFER_SPACE: usize = 5000;
 
@@ -54,18 +54,16 @@ pub fn get_format_reader(file_path: &str) -> Result<Box<dyn FormatReader>> {
 }
 
 pub fn stream_audio_file() -> Result<()> {
-    AUDIO_MIXER.is_preview_started.store(true, Ordering::SeqCst);
+    PREVIEW_MIXER.is_started.store(true, Ordering::SeqCst);
     info!("stream_audio_file");
-    let file_path = AUDIO_MIXER
-        .preview_file
+    let file_path = PREVIEW_MIXER
+        .file_path
         .lock()
         .map_err(|_| anyhow!("failed to acquire preview file lock"))?
         .clone();
     info!("starting streaming {}", file_path);
 
-    AUDIO_MIXER
-        .is_preview_playing
-        .store(false, Ordering::SeqCst);
+    PREVIEW_MIXER.is_playing.store(false, Ordering::SeqCst);
 
     let mut preview_producer_guard = AUDIO_ENGINE
         .preview_producer
@@ -96,7 +94,7 @@ pub fn stream_audio_file() -> Result<()> {
         .make(&track.codec_params, &dec_opts)
         .context("Unsupported codec")?;
 
-    let mut resampler = resampler_2(
+    let mut resampler = create_preview_resampler(
         track_sample_rate as usize,
         AUDIO_ENGINE.sample_rate(),
         AUDIO_ENGINE.num_channels(),
@@ -119,8 +117,8 @@ pub fn stream_audio_file() -> Result<()> {
     let mut interleaved_output = [0.0f32; 8192];
     let num_output_frames = 1024;
     let mut removed_delay_frames = false;
-    AUDIO_MIXER.is_preview_playing.store(true, Ordering::SeqCst);
-    while !AUDIO_MIXER.is_preview_canceled.load(Ordering::SeqCst) {
+    PREVIEW_MIXER.is_playing.store(true, Ordering::SeqCst);
+    while !PREVIEW_MIXER.is_canceled.load(Ordering::SeqCst) {
         if preview_producer.vacant_len() < MINIMUM_BUFFER_SPACE {
             continue;
         }
@@ -170,7 +168,7 @@ pub fn stream_audio_file() -> Result<()> {
             Err(_) => continue,
         }
     }
-    if AUDIO_MIXER.is_preview_playing.load(Ordering::SeqCst) {
+    if PREVIEW_MIXER.is_playing.load(Ordering::SeqCst) {
         for ch in 0..num_track_channels {
             input_buffer[ch].resize(resampler.input_frames_next(), 0.0);
         }
@@ -184,11 +182,7 @@ pub fn stream_audio_file() -> Result<()> {
         }
         preview_producer.push_slice(&interleaved_output[..num_output_frames * 2]);
     }
-    AUDIO_MIXER
-        .is_preview_playing
-        .store(false, Ordering::SeqCst);
-    AUDIO_MIXER
-        .is_preview_started
-        .store(false, Ordering::SeqCst);
+    PREVIEW_MIXER.is_playing.store(false, Ordering::SeqCst);
+    PREVIEW_MIXER.is_started.store(false, Ordering::SeqCst);
     Ok(())
 }

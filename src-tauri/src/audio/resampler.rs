@@ -6,17 +6,19 @@ use rubato::{
 
 // TODO in the future, extract these options from user preferences
 
-pub fn resampler(
+pub fn create_offline_resampler(
     original_sample_rate: usize,
     wanted_sample_rate: usize,
     num_channels: usize,
-) -> SincFixedOut<f32> {
+) -> Result<SincFixedOut<f32>> {
+    let sinc_len = 256;
+    let window = WindowFunction::BlackmanHarris2;
     let params = SincInterpolationParameters {
-        sinc_len: 16,
-        f_cutoff: calculate_cutoff(16, WindowFunction::Hann),
-        interpolation: SincInterpolationType::Cubic, // use cubic or quadratic for offline
-        oversampling_factor: 32,                     // use 256 for offline
-        window: WindowFunction::Hann,                // use BlackmanHarris2 for offline
+        sinc_len,
+        f_cutoff: calculate_cutoff(sinc_len, window),
+        interpolation: SincInterpolationType::Cubic,
+        oversampling_factor: 256,
+        window,
     };
     let resampler = SincFixedOut::<f32>::new(
         wanted_sample_rate as f64 / original_sample_rate as f64,
@@ -25,12 +27,12 @@ pub fn resampler(
         1024,
         num_channels,
     )
-    .unwrap();
+    .context("Failed to create offline resampler")?;
 
-    resampler
+    Ok(resampler)
 }
 
-pub fn resampler_2(
+pub fn create_preview_resampler(
     original_sample_rate: usize,
     wanted_sample_rate: usize,
     num_channels: usize,
@@ -42,7 +44,7 @@ pub fn resampler_2(
         1024,
         num_channels,
     )
-    .context("Failed to create resampler")?;
+    .context("Failed to create preview resampler")?;
 
     Ok(resampler)
 }
