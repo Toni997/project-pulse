@@ -1,6 +1,11 @@
-use crate::audio::timeline_mixer::TIMELINE_MIXER;
+use crate::audio::{project_state::PROJECT_STATE, transport::TRANSPORT};
 
-#[tauri::command(rename = "transport::stop")]
+#[tauri::command]
 pub fn transport_stop() {
-    TIMELINE_MIXER.stop();
+    PROJECT_STATE.stop();
+}
+
+#[tauri::command]
+pub fn transport_play() {
+    TRANSPORT.play();
 }

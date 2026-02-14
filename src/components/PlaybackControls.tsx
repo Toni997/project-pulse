@@ -1,15 +1,14 @@
 import { invoke } from '@tauri-apps/api/core'
 import { ActionIcon } from '@mantine/core'
 import { PlayPauseIcon, StopIcon } from '@phosphor-icons/react'
-import { TIMELINE_STOP } from '../helpers/constants'
+import { TRANSPORT_STOP } from '../helpers/constants'
 
 const PlaybackControls = () => {
   const onPlayPauseClick = () => {
     console.log('play/pause')
   }
   const onStopClick = () => {
-    console.log('stop')
-    invoke(TIMELINE_STOP)
+    invoke(TRANSPORT_STOP)
   }
   return (
     <div className='flex gap-0.5 p-2'>

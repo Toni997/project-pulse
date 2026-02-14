@@ -18,7 +18,7 @@ pub fn run() {
             commands::fs::fs_scan_directory_tree,
             commands::preview::preview_play,
             commands::transport::transport_stop,
-            commands::timeline::timeline_add_audio_track,
+            commands::mixer::mixer_add_audio_track,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

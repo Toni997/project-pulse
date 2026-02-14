@@ -4,12 +4,13 @@ use rubato::{
     SincInterpolationType, WindowFunction,
 };
 
+use crate::{audio::engine::AUDIO_ENGINE, core::constants::ENGINE_NUM_CHANNELS};
+
 // TODO in the future, extract these options from user preferences
 
 pub fn create_offline_resampler(
     original_sample_rate: usize,
     wanted_sample_rate: usize,
-    num_channels: usize,
 ) -> Result<SincFixedOut<f32>> {
     let sinc_len = 256;
     let window = WindowFunction::BlackmanHarris2;
@@ -25,7 +26,7 @@ pub fn create_offline_resampler(
         2.0,
         params,
         1024,
-        num_channels,
+        AUDIO_ENGINE.num_channels(),
     )
     .context("Failed to create offline resampler")?;
 
@@ -35,14 +36,13 @@ pub fn create_offline_resampler(
 pub fn create_preview_resampler(
     original_sample_rate: usize,
     wanted_sample_rate: usize,
-    num_channels: usize,
 ) -> Result<FastFixedOut<f32>> {
     let resampler = FastFixedOut::<f32>::new(
         wanted_sample_rate as f64 / original_sample_rate as f64,
         2.0,
         PolynomialDegree::Linear,
         1024,
-        num_channels,
+        AUDIO_ENGINE.num_channels(),
     )
     .context("Failed to create preview resampler")?;
 

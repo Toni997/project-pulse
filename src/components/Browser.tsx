@@ -110,7 +110,6 @@ const Browser = () => {
         path: selected,
       })
       setData(temp)
-      // invoke('abcd')
     } catch (err) {
       notifications.show({
         color: 'red',

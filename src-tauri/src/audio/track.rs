@@ -5,13 +5,6 @@ use crate::core::constants::MASTER_TRACK_DEFAULT_NAME;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SendAmount {
-    pub bus_id: String,
-    pub amount: f32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct AudioTrack {
     pub id: String,
     pub name: String,
@@ -19,7 +12,6 @@ pub struct AudioTrack {
     pub pan: f32,
     pub muted: bool,
     pub audio_file: String,
-    pub sends: Vec<SendAmount>,
 }
 
 impl AudioTrack {
@@ -31,7 +23,6 @@ impl AudioTrack {
             pan: 0.0,
             muted: false,
             audio_file: String::new(),
-            sends: Vec::new(),
         }
     }
 }

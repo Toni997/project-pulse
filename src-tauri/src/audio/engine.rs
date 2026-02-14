@@ -1,4 +1,4 @@
-use crate::core::constants::{BUFFER_SIZE_DEFAULT, NUM_CHANNELS_DEFAULT};
+use crate::core::constants::{BUFFER_SIZE_DEFAULT, ENGINE_NUM_CHANNELS};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{
@@ -60,7 +60,7 @@ impl AudioEngine {
         let mut config: StreamConfig = supported_config.config();
         config.buffer_size = cpal::BufferSize::Fixed(BUFFER_SIZE_DEFAULT as u32);
         // config.sample_rate = 48000;
-        config.channels = NUM_CHANNELS_DEFAULT as u16;
+        config.channels = ENGINE_NUM_CHANNELS as u16;
 
         match supported_config.buffer_size() {
             cpal::SupportedBufferSize::Range { min, max } => {
