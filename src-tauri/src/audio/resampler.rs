@@ -8,10 +8,7 @@ use crate::{audio::engine::AUDIO_ENGINE, core::constants::ENGINE_NUM_CHANNELS};
 
 // TODO in the future, extract these options from user preferences
 
-pub fn create_offline_resampler(
-    original_sample_rate: usize,
-    wanted_sample_rate: usize,
-) -> Result<SincFixedOut<f32>> {
+pub fn create_offline_resampler(original_sample_rate: usize) -> Result<SincFixedOut<f32>> {
     let sinc_len = 256;
     let window = WindowFunction::BlackmanHarris2;
     let params = SincInterpolationParameters {
@@ -22,7 +19,7 @@ pub fn create_offline_resampler(
         window,
     };
     let resampler = SincFixedOut::<f32>::new(
-        wanted_sample_rate as f64 / original_sample_rate as f64,
+        AUDIO_ENGINE.sample_rate() as f64 / original_sample_rate as f64,
         2.0,
         params,
         1024,
@@ -33,12 +30,9 @@ pub fn create_offline_resampler(
     Ok(resampler)
 }
 
-pub fn create_preview_resampler(
-    original_sample_rate: usize,
-    wanted_sample_rate: usize,
-) -> Result<FastFixedOut<f32>> {
+pub fn create_preview_resampler(original_sample_rate: usize) -> Result<FastFixedOut<f32>> {
     let resampler = FastFixedOut::<f32>::new(
-        wanted_sample_rate as f64 / original_sample_rate as f64,
+        AUDIO_ENGINE.sample_rate() as f64 / original_sample_rate as f64,
         2.0,
         PolynomialDegree::Linear,
         1024,

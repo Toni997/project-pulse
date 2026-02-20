@@ -1,10 +1,12 @@
+use std::sync::LazyLock;
+
 use crate::audio::snapshot::render_graph::RenderGraph;
 use crate::audio::snapshot::scheduler::Scheduler;
 use crate::audio::snapshot::transport_runtime::TransportRuntime;
 use crate::core::constants::{PPQ_DEFAULT, TEMPO_BPM_DEFAULT};
 
 pub struct ProjectSnapshot {
-    pub ppq: usize,
+    pub ppq: u16,
     pub tempo_bpm: f32,
     pub scheduler: Scheduler,
     pub render_graph: RenderGraph,
@@ -22,3 +24,5 @@ impl ProjectSnapshot {
         }
     }
 }
+
+pub static PROJECT_SNAPSHOT: LazyLock<ProjectSnapshot> = LazyLock::new(|| ProjectSnapshot::new());

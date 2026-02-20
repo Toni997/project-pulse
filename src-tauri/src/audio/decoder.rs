@@ -58,6 +58,20 @@ fn sample_at(frame: &[f32], idx: Option<usize>) -> f32 {
 }
 
 fn downmix_frame_to_stereo(frame: &[f32], map: ChannelIndexMap) -> (f32, f32) {
+    // Fast path: if the source is already labeled plain stereo (FL/FR only), don't downmix.
+    // This also avoids accidentally swapping channels if FL/FR indices aren't [0, 1].
+    if map.fl.is_some()
+        && map.fr.is_some()
+        && map.fc.is_none()
+        && map.lfe.is_none()
+        && map.sl.is_none()
+        && map.sr.is_none()
+        && map.rl.is_none()
+        && map.rr.is_none()
+    {
+        return (sample_at(frame, map.fl), sample_at(frame, map.fr));
+    }
+
     if map.fl.is_some() && map.fr.is_none() && map.fc.is_none() {
         let mono = sample_at(frame, map.fl);
         return (mono, mono);
@@ -83,11 +97,11 @@ fn downmix_frame_to_stereo(frame: &[f32], map: ChannelIndexMap) -> (f32, f32) {
 }
 
 pub struct DecodedAudioData {
-    data: Vec<f32>,
-    original_num_channels: usize,
-    original_sample_rate: usize,
-    file_path: String,
-    file_name: String,
+    pub data: Vec<f32>,
+    pub original_num_channels: usize,
+    pub original_sample_rate: usize,
+    pub file_path: String,
+    pub file_name: String,
 }
 
 pub fn get_media_source_stream_for_caching(file_path: &str) -> Result<MediaSourceStream> {
@@ -160,9 +174,8 @@ pub fn stream_audio_file() -> Result<()> {
         .make(&track.codec_params, &dec_opts)
         .context("Unsupported codec")?;
 
-    let mut resampler =
-        create_preview_resampler(track_sample_rate as usize, AUDIO_ENGINE.sample_rate())?;
-    let engine_channels = ENGINE_NUM_CHANNELS;
+    let mut resampler = create_preview_resampler(track_sample_rate as usize)?;
+    let engine_channels = AUDIO_ENGINE.num_channels();
     let channel_map = build_channel_index_map(track_channels);
 
     info!(
@@ -285,10 +298,9 @@ pub fn decode_audio_file(file_path: String) -> Result<DecodedAudioData> {
         .make(&track.codec_params, &dec_opts)
         .context("Unsupported codec")?;
 
-    let engine_sample_rate = AUDIO_ENGINE.sample_rate();
-    let engine_channels = ENGINE_NUM_CHANNELS;
+    let engine_channels = AUDIO_ENGINE.num_channels();
 
-    let mut resampler = create_offline_resampler(track_sample_rate as usize, engine_sample_rate)?;
+    let mut resampler = create_preview_resampler(track_sample_rate as usize)?;
     let channel_map = build_channel_index_map(track_channels);
 
     let mut decoded_data: Vec<f32> = Vec::new();

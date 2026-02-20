@@ -4,18 +4,17 @@ import { notifications } from '@mantine/notifications'
 
 const NotificationListener = () => {
   useEffect(() => {
-    const unlisten = listen('preview-error', (event) => {
-      const data: string = event.payload as string
-      console.error('Preview failed:', data)
+    const unlisten = listen('notification-error', (event) => {
+      const data = event.payload as string
       notifications.show({
         color: 'red',
         title: 'Ooops!',
-        message: data as string,
+        message: data,
       })
     })
 
     return () => {
-      unlisten.then((f) => f())
+      unlisten.then((fn) => fn())
     }
   }, [])
 

@@ -12,8 +12,8 @@ export interface SendAmount {
 
 export interface AudioTrack extends BaseTrack {
   id: string
-  audioFile: string
-  sends: SendAmount[]
+  sourceId: string
+  // sends: SendAmount[]
 }
 
 export interface BusTrack extends BaseTrack {

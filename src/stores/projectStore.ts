@@ -2,6 +2,9 @@ import { create } from 'zustand'
 import { AudioTrack, BusTrack, MasterTrack } from '../types/Track'
 
 export interface ProjectState {
+  ppq: number
+  tempo_bpm: number
+  time_signature: [Number, number] | null
   master: MasterTrack
   tracks: AudioTrack[]
   buses: BusTrack[]
@@ -19,6 +22,9 @@ export interface ProjectState {
 }
 
 export const useProjectStore = create<ProjectState>((set) => ({
+  ppq: 960,
+  tempo_bpm: 128.0,
+  time_signature: [4, 4],
   master: {
     name: 'Master',
     volume: 1.0,

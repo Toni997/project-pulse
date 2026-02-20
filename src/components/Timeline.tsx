@@ -1,20 +1,23 @@
 import React, { useState } from 'react'
 import { Stage, Layer, Rect, Circle, Text, Group, Line } from 'react-konva'
 import { KonvaEventObject } from 'konva/lib/Node'
-import Track from '../types/Track'
+import { AudioTrack } from '../types/Track'
 import { clamp } from '@mantine/hooks'
 import { setCursor } from '../helpers/functions'
 import { ECursor } from '../helpers/enums'
 import { Button } from '@mantine/core'
+import { invoke } from '@tauri-apps/api/core'
+import { MIXER_ADD_AUDIO_TRACK } from '../helpers/constants'
+import { useProjectStore } from '../stores/projectStore'
 
 const Timeline = () => {
   // should start with 30 bars, which is 115,200 ticks at 960 PPQ (pulses per quarter note) resolution
   const bars = 30
   const pixelsPerBar = 50
-  const [tracks, setTracks] = useState<Track[]>([])
   const [playheadPosition, setPlayheadPosition] = useState<number>(0)
   const [stageWidth, setStageWidth] = useState<number>(bars * pixelsPerBar)
   const [stageHeight, setStageHeight] = useState<number>(window.innerHeight)
+  const projectStore = useProjectStore()
 
   const handleMovePlayhead = (e: KonvaEventObject<DragEvent>) => {
     e.target.y(0)
@@ -38,10 +41,19 @@ const Timeline = () => {
     setCursor(ECursor.Default)
   }
 
+  const handleInsertAudioTrack = async () => {
+    const newAudioTrack: AudioTrack | null = await invoke(MIXER_ADD_AUDIO_TRACK)
+    if (newAudioTrack) {
+      projectStore.addAudioTrack(newAudioTrack)
+    }
+  }
+
   return (
     <div className='flex flex-col h-full'>
       <div className='p-2'>
-        <Button variant='filled'>Insert Audio Track</Button>
+        <Button variant='filled' onClick={handleInsertAudioTrack}>
+          Insert Audio Track
+        </Button>
       </div>
       <Stage
         width={stageWidth}

@@ -16,20 +16,30 @@ import {
   CaretRightIcon,
 } from '@phosphor-icons/react'
 import {
-  PREVIEW_AUDIO_ERROR_EVENT_NAME,
+  NOTIFICATION_ERROR_EVENT,
   PREVIEW_PLAY,
   FS_SCAN_DIRECTORY_TREE,
+  MIXER_ADD_AUDIO_TRACK,
+  MIXER_ASSIGN_AUDIO_TO_TRACK,
 } from '../helpers/constants'
 import { NodeRendererProps, Tree } from 'react-arborist'
 import type BrowserNode from '../types/BrowserNode'
 import { Menu, Item, Separator, Submenu, useContextMenu } from 'react-contexify'
 import 'react-contexify/ReactContexify.css'
+import { useProjectStore } from '../stores/projectStore'
+import { AudioTrack } from '../types/Track'
+import { useGlobalStore } from '../stores/globalStore'
+
+const defaultFolder =
+  'C:/Users/skuez/OneDrive/Documents/#SAMPLES/Sounds of KSHMR Vol 4 Complete Edition'
 
 const Node = ({
   node,
   style,
   showContextMenu,
-}: NodeRendererProps<BrowserNode> & { showContextMenu: (e: any) => void }) => {
+}: NodeRendererProps<BrowserNode> & {
+  showContextMenu: (e: any, path: string) => void
+}) => {
   const previewAudioClick = async (filePath: string) => {
     invoke(PREVIEW_PLAY, { filePath })
   }
@@ -40,7 +50,7 @@ const Node = ({
         <span
           style={style}
           className='flex gap-1 items-center hover:bg-gray-200 cursor-pointer'
-          onContextMenu={showContextMenu}
+          onContextMenu={(e) => showContextMenu(e, node.data.value)}
           onClick={
             node.data.is_dir
               ? () => node.toggle()
@@ -67,24 +77,36 @@ const Browser = () => {
   const [isLoading, setIsLoading] = useState(false)
   const fileBrowserRef = useRef<HTMLDivElement>(null)
   const [height, setHeight] = useState(0)
+  const [contextMenuTargetPath, setContextMenuTargetPath] = useState('')
   const { show } = useContextMenu({
     id: 'menu',
   })
+  const setGlobalLoading = useGlobalStore((state) => state.setGlobalLoading)
+  const addAudioTrackToStore = useProjectStore((state) => state.addAudioTrack)
+  const updateAudioTrackInStore = useProjectStore(
+    (state) => state.updateAudioTrack,
+  )
+  const tracks = useProjectStore((state) => state.tracks)
+  console.log(tracks)
+
+  const handleLoadFolder = async (path: string) => {
+    setIsLoading(true)
+    const temp: BrowserNode[] = await invoke(FS_SCAN_DIRECTORY_TREE, { path })
+    setData(temp)
+    setIsLoading(false)
+  }
 
   useLayoutEffect(() => {
     if (!fileBrowserRef.current) return
-
     const observer = new ResizeObserver((entries) => {
       setHeight(entries[0].contentRect.height)
     })
-
     observer.observe(fileBrowserRef.current)
-
     return () => observer.disconnect()
   }, [])
 
   useEffect(() => {
-    const unlisten = listen(PREVIEW_AUDIO_ERROR_EVENT_NAME, (event) => {
+    const unlisten = listen(NOTIFICATION_ERROR_EVENT, (event) => {
       const errorText: string = event.payload as string
       notifications.show({
         color: 'red',
@@ -92,9 +114,10 @@ const Browser = () => {
         message: errorText as string,
       })
     })
+    handleLoadFolder(defaultFolder)
 
     return () => {
-      unlisten.then((f) => f())
+      unlisten.then((fn) => fn())
     }
   }, [])
 
@@ -105,11 +128,7 @@ const Browser = () => {
         multiple: false,
       })
       if (!selected) return
-      setIsLoading(true)
-      const temp: BrowserNode[] = await invoke(FS_SCAN_DIRECTORY_TREE, {
-        path: selected,
-      })
-      setData(temp)
+      await handleLoadFolder(selected)
     } catch (err) {
       notifications.show({
         color: 'red',
@@ -123,8 +142,39 @@ const Browser = () => {
   }
 
   const nodeRenderer = useCallback((props: NodeRendererProps<BrowserNode>) => {
-    return <Node {...props} showContextMenu={(e: any) => show({ event: e })} />
+    const handleShowContextMenu = (e: any, path: string) => {
+      setContextMenuTargetPath(path)
+      show({ event: e })
+    }
+    return <Node {...props} showContextMenu={handleShowContextMenu} />
   }, [])
+
+  const handleAssignToNewTrack = async () => {
+    setGlobalLoading(true)
+    const newAudioTrack: AudioTrack | null = await invoke(
+      MIXER_ADD_AUDIO_TRACK,
+      {
+        sourcePath: contextMenuTargetPath,
+      },
+    )
+    if (newAudioTrack) {
+      addAudioTrackToStore(newAudioTrack)
+    }
+    setGlobalLoading(false)
+  }
+
+  const handleAssignToTrack = async (trackId: string) => {
+    // TODO create an alert dialog if the audio track already has a source
+    setGlobalLoading(true)
+    const sourceId: string | null = await invoke(MIXER_ASSIGN_AUDIO_TO_TRACK, {
+      trackId,
+      sourcePath: contextMenuTargetPath,
+    })
+    if (sourceId) {
+      updateAudioTrackInStore(trackId, { sourceId })
+    }
+    setGlobalLoading(false)
+  }
 
   return (
     <Box pos='relative' className='flex flex-col w-full h-full'>
@@ -139,14 +189,22 @@ const Browser = () => {
         </Button>
       </div>
       <Menu id='menu'>
-        <Item>Assign to new Audio Track</Item>
-        <Submenu label='Assign to track'>
-          <Item id='reload'>Track 1</Item>
+        <Item onClick={handleAssignToNewTrack}>Assign to new Audio Track</Item>
+        <Submenu label='Assign to track' disabled={!tracks.length}>
+          {tracks.map((track, index) => (
+            <Item
+              key={track.id}
+              id={`assign-track-${index}`}
+              onClick={() => handleAssignToTrack(track.id)}
+            >
+              {track.name}
+            </Item>
+          ))}
         </Submenu>
         <Separator />
-        <Item>Add to Favorites</Item>
-        <Item>Add to New Group</Item>
-        <Submenu label='Add to Group'>
+        <Item disabled>Add to Favorites</Item>
+        <Item disabled>Add to New Group</Item>
+        <Submenu label='Add to Group' disabled>
           <Item id='reload'>Group 1</Item>
         </Submenu>
       </Menu>
