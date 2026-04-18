@@ -4,20 +4,22 @@ Project Pulse is a digital audio workstation (DAW) developed in Tauri (Rust + Re
 
 There are several goals for this project:
 - Hone my React and JS/TS skills
-- Learn and better understand the Rust language, especially its borrow checker
-- Combine my two big hobbies, music production and programming
-- Build an actual product that people would want to use and enjoy
+- Learn and better understand the Rust language, especially concepts like ownership and the borrow checker
+- Combine my two big hobbies: music production and programming
+- Build an actual product that people would enjoy using
 
-At the moment, users can only select a folder and play audio files from it (there is a file browser panel on the left side of the screen). However, it is very low-level. A file is read and then decoded to raw PCM data. If the file's sample rate differs from the output's, it is resampled in realtime. Lastly, the resulting samples are sent to the audio output in advance using a ring buffer.
+At the moment, there are just two working parts; a file browser with real-time audio previewing and a timeline for mixing. You can drag&drop files to the timeline and rearrange them as you like. Even though a lot of backend stuff is done, the core part - actual mixing and sending the final mixed samples to the speakers for playback, is still in the works. I'm still figuring out the best way to structure the code for efficiency. Audio programs like this need to be extremely optimized to run without hiccups, and also be real-time safe and thread-safe. I will write about it in more detail once I have something ready.
+
+Just to give a glimpse of how much work goes into this, here's how just basic audio previewing works under the hood; audio data is read from a file and then decoded to raw PCM data, which is basically an uncompressed digital representation of analog data. If the audio's sample rate (how many samples per second there is) differs from the output's, it is resampled in real-time. Lastly, the final samples are sent to the audio output (slightly) in advance using a ring buffer. A sample is, for example, just a number between -1.0 and 1.0 for floating-point formats. Since I've chosen f32 format (it's the most common format; some DAWs also use f64, but the performance impact overshadows any sort of advantage in precision so I didn't bother with supporting it just yet) for the underlying audio engine, any other format is converted to f32 before being used by the engine.
 
 # To-Do for basic DAW features
 - A timeline where users can arrange multiple audio files in time to create a song
 - Settings panel
 - Save/load a project
 - Basic audio manipulation (volume, panning, etc.) for mixing purposes
-- Realtime audio mixing (summing all samples for each audio callback using SIMD and multithreading for optimization)
+- Real-time audio mixing (summing all samples for each audio callback using SIMD and multithreading for optimization)
 - Mixer (used to put effects on tracks and mix them together)
-- Piano roll (manipulate the pitch of audio samples by placing notes in time; later to be used with synths as well)
+- Piano roll (placing notes in time and space, best analogy would be sheet music)
 - Automations (change audio manipulation values over time)
 - Support for hosting third-party effect plugins and synths (VST3-based)
 
