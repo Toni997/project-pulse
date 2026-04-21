@@ -3,6 +3,7 @@ import { useGlobalStore } from '../../stores/globalStore'
 
 const GlobalLoader = () => {
   const isGlobalLoading = useGlobalStore((state) => state.isGlobalLoading)
+
   return (
     <LoadingOverlay
       visible={isGlobalLoading}

@@ -1,4 +1,3 @@
-import React from 'react'
 import { Menubar } from 'radix-ui'
 
 const MenuPanel = () => {

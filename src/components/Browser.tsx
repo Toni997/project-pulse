@@ -10,25 +10,22 @@ import { listen } from '@tauri-apps/api/event'
 import { open } from '@tauri-apps/plugin-dialog'
 import { invoke } from '@tauri-apps/api/core'
 import { notifications } from '@mantine/notifications'
-import {
-  FolderIcon,
-  FileAudioIcon,
-  CaretRightIcon,
-} from '@phosphor-icons/react'
+import { FolderIcon, FileAudioIcon } from '@phosphor-icons/react'
 import {
   NOTIFICATION_ERROR_EVENT,
   PREVIEW_PLAY,
   FS_SCAN_DIRECTORY_TREE,
-  MIXER_ADD_AUDIO_TRACK,
-  MIXER_ASSIGN_AUDIO_TO_TRACK,
+  MIXER_ADD_SAMPLER_TRACK,
+  MIXER_ASSIGN_SOURCE_TO_SAMPLER_TRACK,
 } from '../helpers/constants'
 import { NodeRendererProps, Tree } from 'react-arborist'
 import type BrowserNode from '../types/BrowserNode'
 import { Menu, Item, Separator, Submenu, useContextMenu } from 'react-contexify'
 import 'react-contexify/ReactContexify.css'
 import { useProjectStore } from '../stores/projectStore'
-import { AudioTrack } from '../types/Track'
+import { SamplerTrack, TrackKind } from '../types/Track'
 import { useGlobalStore } from '../stores/globalStore'
+import { useShallow } from 'zustand/react/shallow'
 
 const defaultFolder =
   'C:/Users/skuez/OneDrive/Documents/#SAMPLES/Sounds of KSHMR Vol 4 Complete Edition'
@@ -44,6 +41,13 @@ const Node = ({
     invoke(PREVIEW_PLAY, { filePath })
   }
 
+  const handleDragStart = (e: React.DragEvent<HTMLElement>) => {
+    e.stopPropagation()
+    console.log('DRAGSTARTED11')
+    e.dataTransfer.setData('audio-path', node.data.value)
+    e.dataTransfer.effectAllowed = 'copy'
+  }
+
   return (
     <>
       <Tooltip label={node.data.label} position='right' withArrow>
@@ -56,6 +60,8 @@ const Node = ({
               ? () => node.toggle()
               : () => previewAudioClick(node.data.value)
           }
+          draggable={!node.data.is_dir}
+          onDragStart={handleDragStart}
         >
           {node.data.is_dir ? (
             <FolderIcon className='shrink-0' size={18} weight='light' />
@@ -82,12 +88,19 @@ const Browser = () => {
     id: 'menu',
   })
   const setGlobalLoading = useGlobalStore((state) => state.setGlobalLoading)
-  const addAudioTrackToStore = useProjectStore((state) => state.addAudioTrack)
-  const updateAudioTrackInStore = useProjectStore(
-    (state) => state.updateAudioTrack,
-  )
-  const tracks = useProjectStore((state) => state.tracks)
-  console.log(tracks)
+  const { addTrack, updateTrack, tracks, generatorTracksOrder } =
+    useProjectStore(
+      useShallow((state) => ({
+        addTrack: state.addTrack,
+        updateTrack: state.updateTrack,
+        tracks: state.tracks,
+        generatorTracksOrder: state.generatorTracksOrder,
+      })),
+    )
+
+  const samplerTracks = generatorTracksOrder
+    .map((id) => tracks[id])
+    .filter((t): t is SamplerTrack => !!t && t.kind === TrackKind.Sampler)
 
   const handleLoadFolder = async (path: string) => {
     setIsLoading(true)
@@ -151,27 +164,30 @@ const Browser = () => {
 
   const handleAssignToNewTrack = async () => {
     setGlobalLoading(true)
-    const newAudioTrack: AudioTrack | null = await invoke(
-      MIXER_ADD_AUDIO_TRACK,
+    const newSamplerTrack: SamplerTrack | null = await invoke(
+      MIXER_ADD_SAMPLER_TRACK,
       {
         sourcePath: contextMenuTargetPath,
       },
     )
-    if (newAudioTrack) {
-      addAudioTrackToStore(newAudioTrack)
+    if (newSamplerTrack) {
+      addTrack(newSamplerTrack)
     }
     setGlobalLoading(false)
   }
 
   const handleAssignToTrack = async (trackId: string) => {
-    // TODO create an alert dialog if the audio track already has a source
+    // TODO create an alert dialog if the sampler track already has a source
     setGlobalLoading(true)
-    const sourceId: string | null = await invoke(MIXER_ASSIGN_AUDIO_TO_TRACK, {
-      trackId,
-      sourcePath: contextMenuTargetPath,
-    })
+    const sourceId: string | null = await invoke(
+      MIXER_ASSIGN_SOURCE_TO_SAMPLER_TRACK,
+      {
+        trackId,
+        sourcePath: contextMenuTargetPath,
+      },
+    )
     if (sourceId) {
-      updateAudioTrackInStore(trackId, { sourceId })
+      updateTrack(trackId, { sourceId })
     }
     setGlobalLoading(false)
   }
@@ -189,9 +205,11 @@ const Browser = () => {
         </Button>
       </div>
       <Menu id='menu'>
-        <Item onClick={handleAssignToNewTrack}>Assign to new Audio Track</Item>
-        <Submenu label='Assign to track' disabled={!tracks.length}>
-          {tracks.map((track, index) => (
+        <Item onClick={handleAssignToNewTrack}>
+          Assign to new Sampler Track
+        </Item>
+        <Submenu label='Assign to track' disabled={!samplerTracks.length}>
+          {samplerTracks.map((track, index) => (
             <Item
               key={track.id}
               id={`assign-track-${index}`}
@@ -217,6 +235,8 @@ const Browser = () => {
             width='100%'
             height={height}
             indent={15}
+            // disableDrag={(node: any) => node.data.is_dir}
+            // disableDrop={true}
           >
             {nodeRenderer}
           </Tree>

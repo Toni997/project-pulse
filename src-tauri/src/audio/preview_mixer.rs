@@ -7,10 +7,9 @@ use std::{
     time::Duration,
 };
 
-use log::{info, warn};
-use tauri::{AppHandle, Emitter};
+use log::info;
 
-use crate::{audio::decoder::stream_audio_file, core::constants::NOTIFICATION_ERROR_EVENT};
+use crate::{audio::decoder::stream_audio_file, core::notify::log_and_notify_error};
 
 pub struct PreviewMixer {
     pub is_playing: AtomicBool,
@@ -31,7 +30,7 @@ impl PreviewMixer {
         }
     }
 
-    pub fn play(&self, app: AppHandle, file_path: &str) {
+    pub fn play(&self, file_path: &str) {
         info!("preview_audio_file");
         self.is_playing.store(false, Ordering::SeqCst);
         self.is_canceled.store(true, Ordering::SeqCst);
@@ -51,14 +50,10 @@ impl PreviewMixer {
 
         tauri::async_runtime::spawn_blocking(move || {
             if let Err(e) = stream_audio_file() {
-                warn!("Error trying to preview audio file: {:?}", e);
+                log_and_notify_error(format!("Error trying to preview audio file: {e}"));
                 PREVIEW_MIXER.is_playing.store(false, Ordering::SeqCst);
                 PREVIEW_MIXER.is_started.store(false, Ordering::SeqCst);
                 PREVIEW_MIXER.is_queued.store(false, Ordering::SeqCst);
-                let _ = app.emit(
-                    NOTIFICATION_ERROR_EVENT,
-                    format!("Error trying to preview audio file: {e}"),
-                );
             }
         });
     }

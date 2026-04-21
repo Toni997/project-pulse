@@ -58,6 +58,33 @@ impl AudioStore {
         self.inner.read().unwrap().path_to_id.contains_key(path)
     }
 
+    pub fn get_num_samples_by_id(&self, id: &str) -> Option<usize> {
+        Some(
+            self.inner
+                .read()
+                .unwrap()
+                .store
+                .get(id)?
+                .pcmData
+                .data
+                .len(),
+        )
+    }
+
+    pub fn get_display_name_by_id(&self, id: &str) -> Option<String> {
+        Some(
+            self.inner
+                .read()
+                .unwrap()
+                .store
+                .get(id)?
+                .metaData
+                .load()
+                .display_name
+                .clone(),
+        )
+    }
+
     pub fn add(&self, decoded_audio_data: DecodedAudioData) -> Id {
         let DecodedAudioData {
             data,

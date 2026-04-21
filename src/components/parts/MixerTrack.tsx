@@ -1,6 +1,5 @@
 import { AngleSlider } from '@mantine/core'
 import { Slider } from 'radix-ui'
-import React from 'react'
 import { BaseTrack } from '../../types/Track'
 
 interface MixerTrackProps {

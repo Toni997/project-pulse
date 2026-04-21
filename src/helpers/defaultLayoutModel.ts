@@ -1,11 +1,11 @@
-import { IJsonModel } from "flexlayout-react";
-import Browser from "../components/Browser";
-import Timeline from "../components/Timeline";
+import { IJsonModel } from 'flexlayout-react'
+import Browser from '../components/Browser'
+import Timeline from '../components/Timeline'
 
 const defaultLayoutModel: IJsonModel = {
   global: {
-    splitterSize: 3,
-    splitterExtra: 7,
+    splitterSize: 5,
+    splitterExtra: 0,
     tabEnablePopout: true,
     tabSetEnableClose: true,
     tabSetEnableTabWrap: true,
@@ -77,4 +77,4 @@ const defaultLayoutModel: IJsonModel = {
   popouts: {},
 }
 
-export default defaultLayoutModel;
+export default defaultLayoutModel

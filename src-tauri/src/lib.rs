@@ -29,7 +29,11 @@ pub fn run() {
             commands::preview::preview_play,
             commands::transport::transport_stop,
             commands::mixer::mixer_add_audio_track,
-            commands::mixer::mixer_assign_audio_to_track,
+            commands::mixer::mixer_add_clip_to_audio_track,
+            commands::mixer::mixer_add_audio_track_with_clip,
+            commands::mixer::mixer_add_sampler_track,
+            commands::mixer::mixer_assign_source_to_sampler_track,
+            commands::mixer::mixer_move_clip_in_audio_track,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,24 +1,30 @@
 import { create } from 'zustand'
-import { AudioTrack, BusTrack, MasterTrack } from '../types/Track'
+import Id from '../types/Id'
+import {
+  GeneratorOrBusTrack,
+  MasterTrack,
+  TrackKind,
+} from '../types/Track'
+import type { Clip } from '../types/Clip'
 
 export interface ProjectState {
   ppq: number
   tempo_bpm: number
   time_signature: [Number, number] | null
+  tracks: Record<Id, GeneratorOrBusTrack>
   master: MasterTrack
-  tracks: AudioTrack[]
-  buses: BusTrack[]
+  generatorTracksOrder: Id[]
+  busesOrder: Id[]
 
-  addAudioTrack: (track: AudioTrack) => void
-  addBusTrack: (track: BusTrack) => void
+  addTrack: (track: GeneratorOrBusTrack) => void
 
   updateMasterTrack: (updates: Partial<MasterTrack>) => void
-  updateAudioTrack: (id: string, updates: Partial<AudioTrack>) => void
-  updateBusTrack: (id: string, updates: Partial<BusTrack>) => void
-  // updateSend: (trackId: string, send: SendAmount) => void
+  updateTrack: (id: Id, updates: Partial<GeneratorOrBusTrack>) => void
 
-  removeAudioTrack: (id: string) => void
-  removeBusTrack: (id: string) => void
+  removeTrack: (id: Id) => void
+
+  addClip: (clip: Clip) => void
+  updateClip: (clip: Clip) => void
 }
 
 export const useProjectStore = create<ProjectState>((set) => ({
@@ -30,56 +36,114 @@ export const useProjectStore = create<ProjectState>((set) => ({
     volume: 1.0,
     pan: 0,
     muted: false,
+    clips: {},
+    kind: TrackKind.Master,
   },
-  tracks: [],
-  buses: [],
+  tracks: {},
+  generatorTracksOrder: [],
+  busesOrder: [],
 
-  addAudioTrack: (track) =>
-    set((state) => ({
-      tracks: [...state.tracks, track],
-    })),
+  addTrack: (track) =>
+    set((state) => {
+      const kind = track.kind
+      const nextTracks = { ...state.tracks, [track.id]: track }
 
-  addBusTrack: (track) =>
-    set((state) => ({
-      buses: [...state.buses, track],
-    })),
+      if (kind === TrackKind.Bus) {
+        const nextBusesOrder = state.busesOrder.includes(track.id)
+          ? state.busesOrder
+          : [...state.busesOrder, track.id]
+        return { tracks: nextTracks, busesOrder: nextBusesOrder }
+      }
+
+      const nextGeneratorTracksOrder = state.generatorTracksOrder.includes(
+        track.id,
+      )
+        ? state.generatorTracksOrder
+        : [...state.generatorTracksOrder, track.id]
+
+      return { tracks: nextTracks, generatorTracksOrder: nextGeneratorTracksOrder }
+    }),
 
   updateMasterTrack: (updates) =>
     set((state) => ({
       master: { ...state.master, ...updates },
     })),
 
-  updateAudioTrack: (id, updates) =>
-    set((state) => ({
-      tracks: state.tracks.map((t) => (t.id === id ? { ...t, ...updates } : t)),
-    })),
+  updateTrack: (id, updates) =>
+    set((state) => {
+      const existing = state.tracks[id]
+      if (!existing) return {}
 
-  updateBusTrack: (id, updates) =>
-    set((state) => ({
-      buses: state.buses.map((b) => (b.id === id ? { ...b, ...updates } : b)),
-    })),
+      const next = { ...existing, ...updates } as GeneratorOrBusTrack
+      const prevKind = existing.kind
+      const nextKind = next.kind
 
-  // updateSend: (trackId, send) =>
-  //   set((state) => ({
-  //     tracks: state.tracks.map((t) =>
-  //       t.id === trackId
-  //         ? {
-  //             ...t,
-  //             sends: t.sends.some((s) => s.busId === send.busId)
-  //               ? t.sends.map((s) => (s.busId === send.busId ? send : s))
-  //               : [...t.sends, send],
-  //           }
-  //         : t,
-  //     ),
-  //   })),
+      const nextState: Partial<ProjectState> = {
+        tracks: { ...state.tracks, [id]: next },
+      }
 
-  removeAudioTrack: (id) =>
-    set((state) => ({
-      tracks: state.tracks.filter((t) => t.id !== id),
-    })),
+      if (prevKind !== nextKind) {
+        if (prevKind === TrackKind.Bus) {
+          nextState.busesOrder = state.busesOrder.filter((tid) => tid !== id)
+          nextState.generatorTracksOrder = state.generatorTracksOrder.includes(id)
+            ? state.generatorTracksOrder
+            : [...state.generatorTracksOrder, id]
+        } else if (nextKind === TrackKind.Bus) {
+          nextState.generatorTracksOrder = state.generatorTracksOrder.filter(
+            (tid) => tid !== id,
+          )
+          nextState.busesOrder = state.busesOrder.includes(id)
+            ? state.busesOrder
+            : [...state.busesOrder, id]
+        }
+      }
 
-  removeBusTrack: (id) =>
-    set((state) => ({
-      buses: state.buses.filter((b) => b.id !== id),
-    })),
+      return nextState
+    }),
+
+  removeTrack: (id) =>
+    set((state) => {
+      if (!state.tracks[id]) return {}
+      const { [id]: _, ...rest } = state.tracks
+      return {
+        tracks: rest,
+        generatorTracksOrder: state.generatorTracksOrder.filter((tid) => tid !== id),
+        busesOrder: state.busesOrder.filter((tid) => tid !== id),
+      }
+    }),
+
+  addClip: (clip) =>
+    set((state) => {
+      const trackId = clip.trackId
+      const existing = state.tracks[trackId]
+      if (!existing) return {}
+
+      return {
+        tracks: {
+          ...state.tracks,
+          [trackId]: {
+            ...existing,
+            clips: { ...existing.clips, [clip.id]: clip },
+          },
+        },
+      }
+    }),
+
+  updateClip: (clip) =>
+    set((state) => {
+      const trackId = clip.trackId
+      const existing = state.tracks[trackId]
+      if (!existing) return {}
+      if (!existing.clips[clip.id]) return {}
+
+      return {
+        tracks: {
+          ...state.tracks,
+          [trackId]: {
+            ...existing,
+            clips: { ...existing.clips, [clip.id]: clip },
+          },
+        },
+      }
+    }),
 }))
