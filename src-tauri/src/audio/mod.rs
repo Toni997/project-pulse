@@ -7,5 +7,6 @@ pub mod preview_mixer;
 pub mod project_state;
 pub mod resampler;
 pub mod snapshot;
+pub mod thread_pool;
 pub mod track;
 pub mod transport;

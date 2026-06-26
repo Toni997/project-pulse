@@ -11,6 +11,9 @@ use crate::audio::clip::{Clip, ClipToInsert};
 use crate::audio::decoder::decode_audio_file;
 use crate::audio::engine::AUDIO_ENGINE;
 use crate::audio::preview_mixer::PREVIEW_MIXER;
+use crate::audio::snapshot::project_snapshot::{
+    rebuild_data_nodes, rebuild_render_graph, rebuild_scheduler,
+};
 use crate::audio::track::{
     default_track_name, AudioTrack, BusTrack, GeneratorTrack, MasterTrack, SamplerTrack,
 };
@@ -137,6 +140,7 @@ impl ProjectState {
     }
 
     pub fn add_audio_track(&self) -> AudioTrack {
+        println!("ProjectState: add_audio_track");
         let mut tracks = self.tracks.lock().unwrap();
         let track = AudioTrack::new(default_track_name(tracks.len() + 1));
         tracks.insert(track.id.clone(), GeneratorTrack::AudioTrack(track.clone()));
@@ -144,6 +148,7 @@ impl ProjectState {
     }
 
     pub async fn add_audio_track_with_clip(&self, clip: ClipToInsert) -> Option<AudioTrack> {
+        print!("ProjectState: add_audio_track_with_clip: {:?}", clip);
         let (asset_id, num_samples, clip_name) = self.ensure_audio_asset(clip.source_path).await?;
         let length_ppq = self.calc_clip_length_ppq(num_samples);
 
@@ -161,10 +166,14 @@ impl ProjectState {
         track.clips.insert(new_clip.id.clone(), new_clip);
 
         tracks.insert(track.id.clone(), GeneratorTrack::AudioTrack(track.clone()));
+        rebuild_render_graph();
+        rebuild_data_nodes();
+        rebuild_scheduler();
         Some(track)
     }
 
     pub async fn add_clip_to_audio_track(&self, clip: ClipToInsert) -> Option<Clip> {
+        println!("ProjectState: add_clip_to_audio_track: {:?}", clip);
         let (asset_id, num_samples, clip_name) = self.ensure_audio_asset(clip.source_path).await?;
         let length_ppq = self.calc_clip_length_ppq(num_samples);
 
@@ -202,6 +211,8 @@ impl ProjectState {
             );
             let clip_id = new_clip.id.clone();
             audio.clips.insert(clip_id.clone(), new_clip);
+            rebuild_data_nodes();
+            rebuild_scheduler();
             return audio.clips.get(&clip_id).cloned();
         }
 
@@ -222,6 +233,7 @@ impl ProjectState {
         let audio = t.as_audio_mut()?;
         let c = audio.clips.get_mut(&clip_id)?;
         c.start_ppq = start_ppq;
+        rebuild_scheduler();
         Some(c.clone())
     }
 
@@ -283,6 +295,16 @@ impl ProjectState {
 
     pub fn with_tracks<R>(&self, f: impl FnOnce(&IndexMap<Id, GeneratorTrack>) -> R) -> R {
         let guard = self.tracks.lock().unwrap();
+        f(&*guard)
+    }
+
+    pub fn with_master<R>(&self, f: impl FnOnce(&MasterTrack) -> R) -> R {
+        let guard = self.master.lock().unwrap();
+        f(&*guard)
+    }
+
+    pub fn with_buses<R>(&self, f: impl FnOnce(&IndexMap<Id, BusTrack>) -> R) -> R {
+        let guard = self.buses.lock().unwrap();
         f(&*guard)
     }
 

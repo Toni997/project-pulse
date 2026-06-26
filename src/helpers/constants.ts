@@ -6,6 +6,7 @@ export const NOTIFICATION_ERROR_EVENT = 'notification-error'
 
 export const FS_SCAN_DIRECTORY_TREE = 'fs_scan_directory_tree'
 export const PREVIEW_PLAY = 'preview_play'
+export const TRANSPORT_PLAY = 'transport_play'
 export const TRANSPORT_STOP = 'transport_stop'
 export const MIXER_ADD_AUDIO_TRACK = 'mixer_add_audio_track'
 export const MIXER_ADD_CLIP_TO_AUDIO_TRACK = 'mixer_add_clip_to_audio_track'

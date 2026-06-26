@@ -1,6 +1,7 @@
 pub mod bus_node;
 pub mod clip_event;
 pub mod clip_node;
+pub mod data_nodes;
 pub mod master_node;
 pub mod project_snapshot;
 pub mod render_graph;

@@ -1,11 +1,12 @@
 import { invoke } from '@tauri-apps/api/core'
 import { ActionIcon } from '@mantine/core'
 import { PlayPauseIcon, StopIcon } from '@phosphor-icons/react'
-import { TRANSPORT_STOP } from '../helpers/constants'
+import { TRANSPORT_PLAY, TRANSPORT_STOP } from '../helpers/constants'
 
 const PlaybackControls = () => {
   const onPlayPauseClick = () => {
     console.log('play/pause')
+    invoke(TRANSPORT_PLAY)
   }
   const onStopClick = () => {
     invoke(TRANSPORT_STOP)

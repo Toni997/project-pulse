@@ -7,5 +7,5 @@ pub fn transport_stop() {
 
 #[tauri::command]
 pub fn transport_play() {
-    TRANSPORT.play();
+    tauri::async_runtime::spawn_blocking(|| TRANSPORT.play());
 }

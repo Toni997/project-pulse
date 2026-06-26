@@ -15,6 +15,12 @@ pub struct AudioPcmData {
     data: Vec<EngineSampleFormat>,
 }
 
+impl AudioPcmData {
+    pub fn samples(&self) -> &Vec<EngineSampleFormat> {
+        &self.data
+    }
+}
+
 pub struct AudioMetaData {
     file_path: String,
     display_name: String,
@@ -59,16 +65,7 @@ impl AudioStore {
     }
 
     pub fn get_num_samples_by_id(&self, id: &str) -> Option<usize> {
-        Some(
-            self.inner
-                .read()
-                .unwrap()
-                .store
-                .get(id)?
-                .pcmData
-                .data
-                .len(),
-        )
+        Some(self.inner.read().unwrap().store.get(id)?.pcmData.data.len())
     }
 
     pub fn get_display_name_by_id(&self, id: &str) -> Option<String> {

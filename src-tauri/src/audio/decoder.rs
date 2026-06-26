@@ -2,11 +2,9 @@ use anyhow::{anyhow, Context, Result};
 use log::info;
 use ringbuf::traits::{Observer, Producer};
 use rubato::Resampler;
-use std::collections::HashMap;
 use std::io::Cursor;
 use std::path::Path;
 use std::sync::atomic::Ordering;
-use std::sync::{LazyLock, RwLock};
 use std::{f32, fs};
 use symphonia::core::audio::{Channels, SampleBuffer, SignalSpec};
 use symphonia::core::codecs::DecoderOptions;
@@ -19,7 +17,6 @@ use symphonia::default::{get_codecs, get_probe};
 use crate::audio::engine::AUDIO_ENGINE;
 use crate::audio::preview_mixer::PREVIEW_MIXER;
 use crate::audio::resampler::{create_offline_resampler, create_preview_resampler};
-use crate::core::constants::ENGINE_NUM_CHANNELS;
 
 const MINIMUM_BUFFER_SPACE: usize = 5000;
 

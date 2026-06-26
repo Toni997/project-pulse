@@ -28,6 +28,7 @@ pub fn run() {
             commands::fs::fs_scan_directory_tree,
             commands::preview::preview_play,
             commands::transport::transport_stop,
+            commands::transport::transport_play,
             commands::mixer::mixer_add_audio_track,
             commands::mixer::mixer_add_clip_to_audio_track,
             commands::mixer::mixer_add_audio_track_with_clip,

@@ -1,4 +1,5 @@
 use crate::core::constants::{BUFFER_SIZE_DEFAULT, ENGINE_NUM_CHANNELS};
+use crate::core::types::EngineSampleFormat;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{
@@ -91,7 +92,7 @@ impl AudioEngine {
 
     pub fn start(&self) {
         // Create and split the ring buffers
-        let engine_rb = HeapRb::<f32>::new(4096);
+        let engine_rb = HeapRb::<f32>::new(BUFFER_SIZE_DEFAULT as usize * self.num_channels());
         let (engine_prod, engine_cons) = engine_rb.split();
 
         let preview_rb = HeapRb::<f32>::new(44100);
@@ -171,7 +172,7 @@ impl AudioEngine {
 
                     for i in 0..output.len() {
                         let mixed = engine_slice[i] + preview_slice[i];
-                        output[i] = SampleType::from_sample::<f32>(mixed);
+                        output[i] = SampleType::from_sample::<EngineSampleFormat>(mixed);
                     }
                 },
                 move |err| error!("Stream error: {}", err),

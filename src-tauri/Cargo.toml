@@ -40,3 +40,4 @@ arc-swap = "1.8.1"
 sorted-vec = "0.8.10"
 strum_macros = "0.28.0"
 indexmap = { version = "2.13.0", features = ["serde"] }
+num_cpus = "1.17.0"
