@@ -35,6 +35,7 @@ pub fn run() {
             commands::mixer::mixer_add_sampler_track,
             commands::mixer::mixer_assign_source_to_sampler_track,
             commands::mixer::mixer_move_clip_in_audio_track,
+            commands::mixer::mixer_delete_clip_from_audio_track
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,20 +1,19 @@
 use std::sync::{
-    atomic::{AtomicBool, AtomicUsize, Ordering},
-    Arc, LazyLock,
+    atomic::{
+        AtomicBool, AtomicUsize,
+        Ordering::{self, SeqCst},
+    },
+    LazyLock, Mutex,
 };
 
 use anyhow::{anyhow, Context, Result};
+use log::info;
 use ringbuf::traits::{Observer, Producer};
 
 use crate::{
     audio::{
-        engine::AUDIO_ENGINE,
-        project_state::PROJECT_STATE,
-        snapshot::{
-            project_snapshot::{load_project_snapshot, PROJECT_SNAPSHOT},
-            scheduler::SchedulerAudioTrack,
-        },
-        track,
+        engine::AUDIO_ENGINE, preview_mixer::PREVIEW_MIXER,
+        snapshot::project_snapshot::load_project_snapshot, thread_pool::AUDIO_WORKER_POOL,
     },
     core::constants::BUFFER_SIZE_DEFAULT,
 };
@@ -40,10 +39,21 @@ impl Transport {
         self.position_ppq.load(Ordering::SeqCst)
     }
 
+    pub fn stop(&self) {
+        PREVIEW_MIXER.is_canceled.store(true, Ordering::SeqCst);
+        self.is_playing
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        self.position_ppq.store(0, Ordering::SeqCst);
+        self.position_samples.store(0, Ordering::SeqCst);
+        AUDIO_WORKER_POOL.stop();
+    }
+
     pub fn play(&self) -> Result<()> {
-        let new_position_samples = self.position_ppq() * PROJECT_STATE.ppq() as usize;
-        self.position_samples
-            .store(new_position_samples, Ordering::SeqCst);
+        info!(
+            "Transport play, ppq {}, samples {}",
+            self.position_ppq(),
+            self.position_samples.load(SeqCst)
+        );
         TRANSPORT
             .is_playing
             .store(true, std::sync::atomic::Ordering::SeqCst);
@@ -58,38 +68,44 @@ impl Transport {
         let snapshot = load_project_snapshot();
         let mut current_snapshot_version = snapshot.version.clone();
         let mut tracks = &snapshot.get_scheduler().tracks;
-        let mut track_buffers = vec![vec![0.0f32; buffer_size]; tracks.len()];
-        let mut current_active_clip_indexes = vec![0; tracks.len()];
+        // TODO find a way to not put these buffers inside a mutex
+        let mut track_buffers = tracks
+            .iter()
+            .map(|_| Mutex::new(vec![0.0f32; buffer_size]))
+            .collect::<Vec<_>>();
         let mut main_buffer = vec![0.0f32; buffer_size];
+        AUDIO_WORKER_POOL.start();
         while TRANSPORT.is_playing.load(Ordering::SeqCst) {
             main_buffer.fill(0.0);
             let snapshot = load_project_snapshot();
-            println!("Transport: play LOOP, {}", snapshot.version);
             tracks = &snapshot.get_scheduler().tracks;
             if snapshot.version != current_snapshot_version {
                 current_snapshot_version = snapshot.version.clone();
-                track_buffers.resize(tracks.len(), vec![0.0f32; buffer_size]);
-                current_active_clip_indexes.resize(tracks.len(), 0);
+                track_buffers.truncate(tracks.len());
+                while track_buffers.len() < tracks.len() {
+                    track_buffers.push(Mutex::new(vec![0.0f32; buffer_size]));
+                }
             }
             if engine_producer.vacant_len() < buffer_size {
                 continue;
             }
-            // TODO use thread pool here
-            for (index, track) in tracks.iter().enumerate() {
-                track.fill_with_active_samples(
-                    self.position_samples.load(Ordering::SeqCst),
-                    &mut current_active_clip_indexes[index],
-                    &mut track_buffers[index],
-                    snapshot.clone(),
-                );
-            }
+            let position_samples = self.position_samples.load(Ordering::SeqCst);
+            AUDIO_WORKER_POOL.run_parallel(tracks.len(), &|_, track_index| {
+                let mut track_buffer = track_buffers[track_index].lock().unwrap();
+                tracks[track_index].render(position_samples, &mut track_buffer, snapshot.clone());
+            });
+
             for track_buffer in track_buffers.iter() {
+                let track_buffer = track_buffer.lock().unwrap();
                 for (main_sample, track_sample) in main_buffer.iter_mut().zip(track_buffer.iter()) {
                     *main_sample += *track_sample;
                 }
             }
             engine_producer.push_slice(&main_buffer);
+            self.position_samples
+                .fetch_add(buffer_size, Ordering::SeqCst);
         }
+        AUDIO_WORKER_POOL.stop();
         Ok(())
     }
 }

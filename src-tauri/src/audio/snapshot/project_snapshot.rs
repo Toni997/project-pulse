@@ -4,6 +4,7 @@ use std::sync::{
 };
 
 use arc_swap::ArcSwap;
+use log::info;
 use nanoid::nanoid;
 use tauri::async_runtime;
 
@@ -138,7 +139,7 @@ pub fn set_project_data_nodes(data_nodes: Arc<DataNodes>) {
 
 pub fn rebuild_scheduler() {
     async_runtime::spawn_blocking(move || {
-        println!("Rebuilding scheduler...");
+        info!("Rebuilding scheduler...");
         let gen = SCHEDULER_REBUILD_GEN.fetch_add(1, Ordering::SeqCst) + 1;
         let scheduler_version = nanoid!();
 
@@ -153,7 +154,6 @@ pub fn rebuild_scheduler() {
         }
 
         let scheduler = Arc::new(scheduler);
-        println!("Rebuilt scheduler with version: {}", scheduler_version);
         PROJECT_SNAPSHOT.rcu(move |current| {
             Arc::new(current.with_scheduler(Arc::clone(&scheduler), scheduler_version.clone()))
         });
@@ -162,6 +162,7 @@ pub fn rebuild_scheduler() {
 
 pub fn rebuild_render_graph() {
     async_runtime::spawn_blocking(move || {
+        info!("Rebuilding render graph...");
         let gen = RENDER_GRAPH_REBUILD_GEN.fetch_add(1, Ordering::SeqCst) + 1;
         let render_graph_version = nanoid!();
 
@@ -187,6 +188,7 @@ pub fn rebuild_render_graph() {
 
 pub fn rebuild_data_nodes() {
     async_runtime::spawn_blocking(move || {
+        info!("Rebuilding data nodes...");
         let gen = DATA_NODES_REBUILD_GEN.fetch_add(1, Ordering::SeqCst) + 1;
         let data_nodes_version = nanoid!();
 

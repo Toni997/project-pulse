@@ -23,39 +23,36 @@ pub struct SchedulerAudioTrack {
 }
 
 impl SchedulerAudioTrack {
-    pub fn fill_with_active_samples(
+    pub fn render(
         &self,
         position_samples: usize,
-        last_active_clip_index: &mut usize,
         out: &mut Vec<f32>,
         snapshot: Arc<ProjectSnapshot>,
     ) {
         out.fill(0.0);
-        println!(
-            "SchedulerAudioTrack: {} filling with active samples, {}",
-            self.name,
-            self.clips.len()
-        );
         if self.clips.is_empty() {
             return;
         }
-        let mut filled_samples_count = 0;
         let needed_samples_count = out.len();
-        let mut current_clip = self.clips.get(*last_active_clip_index);
-        if current_clip.is_none()
-            || !current_clip
-                .unwrap()
-                .should_be_rendered(position_samples, needed_samples_count)
-        {
-            *last_active_clip_index = 0;
-            current_clip = self.clips.get(*last_active_clip_index);
+        let mut current_clip: Option<&ClipEvent> = None;
+        let mut current_clip_index = 0;
+
+        // TODO optimize this by remembering the last clip index
+        for i in 0..self.clips.len() {
+            let clip = &self.clips[i];
+            if clip.is_scheduled_at_position(position_samples, needed_samples_count) {
+                current_clip_index = i;
+                current_clip = Some(clip);
+                break;
+            }
         }
 
+        let mut filled_samples_count = 0;
         while filled_samples_count < needed_samples_count
             && current_clip.is_some()
             && current_clip
                 .unwrap()
-                .should_be_rendered(position_samples, needed_samples_count)
+                .is_scheduled_at_position(position_samples, needed_samples_count)
         {
             let clip = current_clip.unwrap();
             filled_samples_count = clip.render(
@@ -63,8 +60,10 @@ impl SchedulerAudioTrack {
                 &mut out[filled_samples_count..needed_samples_count],
                 snapshot.clone(),
             );
-            *last_active_clip_index += 1;
-            current_clip = self.clips.get(*last_active_clip_index);
+            if filled_samples_count < needed_samples_count {
+                current_clip_index += 1;
+                current_clip = self.clips.get(current_clip_index);
+            }
         }
     }
 }
@@ -79,7 +78,6 @@ impl Scheduler {
     }
 
     pub fn build(should_abort: impl Fn() -> bool) -> Option<Self> {
-        println!("Scheduler: build called");
         if should_abort() {
             return None;
         }

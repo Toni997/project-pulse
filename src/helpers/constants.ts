@@ -15,3 +15,5 @@ export const MIXER_MOVE_CLIP_IN_AUDIO_TRACK = 'mixer_move_clip_in_audio_track'
 export const MIXER_ADD_SAMPLER_TRACK = 'mixer_add_sampler_track'
 export const MIXER_ASSIGN_SOURCE_TO_SAMPLER_TRACK =
   'mixer_assign_source_to_sampler_track'
+export const MIXER_DELETE_CLIP_FROM_AUDIO_TRACK =
+  'mixer_delete_clip_from_audio_track'

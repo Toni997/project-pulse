@@ -6,7 +6,10 @@ import { ECursor } from '../../helpers/enums'
 import type { Clip } from '../../types/Clip'
 import { useTimelineStore } from '../../stores/timelineStore'
 import { useProjectStore } from '../../stores/projectStore'
-import { MIXER_MOVE_CLIP_IN_AUDIO_TRACK } from '../../helpers/constants'
+import {
+  MIXER_DELETE_CLIP_FROM_AUDIO_TRACK,
+  MIXER_MOVE_CLIP_IN_AUDIO_TRACK,
+} from '../../helpers/constants'
 import type { KonvaEventObject } from 'konva/lib/Node'
 
 interface TimelineClipProps {
@@ -33,6 +36,7 @@ const TimelineClip = ({
   const ppq = useProjectStore((state) => state.ppq)
   const pxPerBeat = useTimelineStore((state) => state.pxPerBeat)
   const updateClip = useProjectStore((state) => state.updateClip)
+  const removeClip = useProjectStore((state) => state.removeClip)
 
   const { x, y, width, height, fill } = useMemo(() => {
     const padding = 4
@@ -84,6 +88,15 @@ const TimelineClip = ({
     updateClip(updated)
   }
 
+  const handleDelete = () => {
+    removeClip(clip.trackId, clip.id)
+    setCursor(ECursor.Default)
+    invoke(MIXER_DELETE_CLIP_FROM_AUDIO_TRACK, {
+      trackId: clip.trackId,
+      clipId: clip.id,
+    })
+  }
+
   return (
     <Group
       name='timeline-clip'
@@ -94,6 +107,12 @@ const TimelineClip = ({
       onDragStart={handleDragStart}
       onDragMove={handleDragMove}
       onDragEnd={handleDragEnd}
+      onContextMenu={(e: KonvaEventObject<MouseEvent>) => {
+        console.log('Context menu on clip', clip.id)
+        e.evt.preventDefault()
+        e.evt.stopPropagation()
+        handleDelete()
+      }}
     >
       <Rect
         width={width}

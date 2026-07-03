@@ -46,3 +46,8 @@ pub async fn mixer_assign_source_to_sampler_track(
 pub fn mixer_move_clip_in_audio_track(track_id: Id, clip_id: Id, start_ppq: usize) -> Option<Clip> {
     PROJECT_STATE.move_clip_in_audio_track(track_id, clip_id, start_ppq)
 }
+
+#[tauri::command]
+pub fn mixer_delete_clip_from_audio_track(track_id: Id, clip_id: Id) {
+    PROJECT_STATE.delete_clip_from_audio_track(&track_id, &clip_id)
+}

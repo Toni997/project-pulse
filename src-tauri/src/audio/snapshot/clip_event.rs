@@ -36,9 +36,25 @@ impl PartialEq for ClipEvent {
 }
 
 impl ClipEvent {
-    pub fn should_be_rendered(&self, position_samples: usize, needed_samples_count: usize) -> bool {
-        position_samples + needed_samples_count > self.start_sample
-            && position_samples < self.end_sample
+    pub fn is_scheduled_at_position(
+        &self,
+        position_samples: usize,
+        needed_samples_count: usize,
+    ) -> bool {
+        position_samples + needed_samples_count >= self.start_sample
+            && position_samples <= self.end_sample
+    }
+
+    pub fn is_scheduled_before_position(
+        &self,
+        position_samples: usize,
+        needed_samples_count: usize,
+    ) -> bool {
+        position_samples + needed_samples_count < self.start_sample
+    }
+
+    pub fn is_scheduled_after_position(&self, position_samples: usize) -> bool {
+        position_samples > self.end_sample
     }
 
     pub fn render(

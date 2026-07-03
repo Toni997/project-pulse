@@ -60,7 +60,6 @@ impl AudioEngine {
         let sample_format = supported_config.sample_format();
         let mut config: StreamConfig = supported_config.config();
         config.buffer_size = cpal::BufferSize::Fixed(BUFFER_SIZE_DEFAULT as u32);
-        // config.sample_rate = 48000;
         config.channels = ENGINE_NUM_CHANNELS as u16;
 
         match supported_config.buffer_size() {
@@ -91,8 +90,12 @@ impl AudioEngine {
     }
 
     pub fn start(&self) {
+        // Double the buffer size for safety
+        let buffer_multiplier = 2;
         // Create and split the ring buffers
-        let engine_rb = HeapRb::<f32>::new(BUFFER_SIZE_DEFAULT as usize * self.num_channels());
+        let engine_rb = HeapRb::<f32>::new(
+            BUFFER_SIZE_DEFAULT as usize * self.num_channels() * buffer_multiplier,
+        );
         let (engine_prod, engine_cons) = engine_rb.split();
 
         let preview_rb = HeapRb::<f32>::new(44100);

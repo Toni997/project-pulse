@@ -339,6 +339,10 @@ const Timeline = () => {
           height={stageHeight}
           className='h-full'
           onWheel={handleWheel}
+          onContextMenu={(e: KonvaEventObject<MouseEvent>) => {
+            console.log('Context menu on timeline')
+            e.evt.preventDefault()
+          }}
         >
           <Layer>
             <TimelineGridLines />

@@ -1,6 +1,7 @@
 use anyhow::Error;
 use atomic_float::AtomicF32;
 use indexmap::IndexMap;
+use log::info;
 use std::path::Path;
 use std::sync::atomic::AtomicU16;
 use std::sync::{atomic::Ordering, LazyLock, Mutex};
@@ -136,14 +137,18 @@ impl ProjectState {
             track.id.clone(),
             GeneratorTrack::SamplerTrack(track.clone()),
         );
+        rebuild_render_graph();
+        rebuild_data_nodes();
         Some(track)
     }
 
     pub fn add_audio_track(&self) -> AudioTrack {
-        println!("ProjectState: add_audio_track");
+        info!("ProjectState: add_audio_track");
         let mut tracks = self.tracks.lock().unwrap();
         let track = AudioTrack::new(default_track_name(tracks.len() + 1));
         tracks.insert(track.id.clone(), GeneratorTrack::AudioTrack(track.clone()));
+        rebuild_render_graph();
+        rebuild_data_nodes();
         track
     }
 
@@ -173,7 +178,7 @@ impl ProjectState {
     }
 
     pub async fn add_clip_to_audio_track(&self, clip: ClipToInsert) -> Option<Clip> {
-        println!("ProjectState: add_clip_to_audio_track: {:?}", clip);
+        info!("ProjectState: add_clip_to_audio_track: {:?}", clip);
         let (asset_id, num_samples, clip_name) = self.ensure_audio_asset(clip.source_path).await?;
         let length_ppq = self.calc_clip_length_ppq(num_samples);
 
@@ -290,7 +295,22 @@ impl ProjectState {
     }
 
     pub fn delete_audio_track(&self, track_id: &str) {
+        info!("ProjectState: delete_audio_track: {}", track_id);
         self.tracks.lock().unwrap().shift_remove(track_id);
+        rebuild_render_graph();
+        rebuild_data_nodes();
+        rebuild_scheduler();
+    }
+
+    pub fn delete_clip_from_audio_track(&self, track_id: &str, clip_id: &str) {
+        let mut tracks = self.tracks.lock().unwrap();
+        if let Some(track) = tracks.get_mut(track_id) {
+            if let Some(audio_track) = track.as_audio_mut() {
+                audio_track.clips.shift_remove(clip_id);
+                rebuild_data_nodes();
+                rebuild_scheduler();
+            }
+        }
     }
 
     pub fn with_tracks<R>(&self, f: impl FnOnce(&IndexMap<Id, GeneratorTrack>) -> R) -> R {

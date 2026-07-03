@@ -1,10 +1,6 @@
 import { create } from 'zustand'
 import Id from '../types/Id'
-import {
-  GeneratorOrBusTrack,
-  MasterTrack,
-  TrackKind,
-} from '../types/Track'
+import { GeneratorOrBusTrack, MasterTrack, TrackKind } from '../types/Track'
 import type { Clip } from '../types/Clip'
 
 export interface ProjectState {
@@ -20,11 +16,11 @@ export interface ProjectState {
 
   updateMasterTrack: (updates: Partial<MasterTrack>) => void
   updateTrack: (id: Id, updates: Partial<GeneratorOrBusTrack>) => void
-
   removeTrack: (id: Id) => void
 
   addClip: (clip: Clip) => void
   updateClip: (clip: Clip) => void
+  removeClip: (trackId: Id, clipId: Id) => void
 }
 
 export const useProjectStore = create<ProjectState>((set) => ({
@@ -61,7 +57,10 @@ export const useProjectStore = create<ProjectState>((set) => ({
         ? state.generatorTracksOrder
         : [...state.generatorTracksOrder, track.id]
 
-      return { tracks: nextTracks, generatorTracksOrder: nextGeneratorTracksOrder }
+      return {
+        tracks: nextTracks,
+        generatorTracksOrder: nextGeneratorTracksOrder,
+      }
     }),
 
   updateMasterTrack: (updates) =>
@@ -85,7 +84,9 @@ export const useProjectStore = create<ProjectState>((set) => ({
       if (prevKind !== nextKind) {
         if (prevKind === TrackKind.Bus) {
           nextState.busesOrder = state.busesOrder.filter((tid) => tid !== id)
-          nextState.generatorTracksOrder = state.generatorTracksOrder.includes(id)
+          nextState.generatorTracksOrder = state.generatorTracksOrder.includes(
+            id,
+          )
             ? state.generatorTracksOrder
             : [...state.generatorTracksOrder, id]
         } else if (nextKind === TrackKind.Bus) {
@@ -107,7 +108,9 @@ export const useProjectStore = create<ProjectState>((set) => ({
       const { [id]: _, ...rest } = state.tracks
       return {
         tracks: rest,
-        generatorTracksOrder: state.generatorTracksOrder.filter((tid) => tid !== id),
+        generatorTracksOrder: state.generatorTracksOrder.filter(
+          (tid) => tid !== id,
+        ),
         busesOrder: state.busesOrder.filter((tid) => tid !== id),
       }
     }),
@@ -146,4 +149,25 @@ export const useProjectStore = create<ProjectState>((set) => ({
         },
       }
     }),
+
+  removeClip: (trackId, clipId) => {
+    set((state) => {
+      console.log('Removing clip from state', trackId, clipId)
+      const existing = state.tracks[trackId]
+      if (!existing) return {}
+      if (!existing.clips[clipId]) return {}
+
+      const { [clipId]: _, ...restClips } = existing.clips
+
+      return {
+        tracks: {
+          ...state.tracks,
+          [trackId]: {
+            ...existing,
+            clips: restClips,
+          },
+        },
+      }
+    })
+  },
 }))
