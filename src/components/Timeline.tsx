@@ -2,36 +2,45 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react'
-import { Stage, Layer, Group } from 'react-konva'
+import { Application, type ApplicationRef } from '@pixi/react'
+import './parts/pixiSetup'
 import { GeneratorTrack, TrackKind } from '../types/Track'
 import { clamp } from '@mantine/hooks'
 import { invoke } from '@tauri-apps/api/core'
 import {
+  BASE_PX_PER_BEAT,
+  BASE_TRACK_HEIGHT_PX,
   BEATS_PER_BAR,
+  EXTRA_EMPTY_TRACK_SLOTS,
+  MAX_PX_PER_BEAT,
+  MAX_TRACK_SCALE,
   MINIMUM_BARS_VISIBLE,
+  MIN_PX_PER_BEAT,
+  MIN_TRACK_SCALE,
   MIXER_ADD_CLIP_TO_AUDIO_TRACK,
   MIXER_ADD_AUDIO_TRACK_WITH_CLIP,
+  SCROLLBAR_THICKNESS_PX,
+  TRACKS_START_Y,
 } from '../helpers/constants'
 import TimelineBar from './parts/TimelineBar'
 import TimelineGridLines from './parts/TimelineGridLines'
 import TimelineTrack from './parts/TimelineTrack'
+import TimelineScrollbar from './parts/TimelineScrollbar'
 import { useProjectStore } from '../stores/projectStore'
 import { useTimelineStore } from '../stores/timelineStore'
 import { useShallow } from 'zustand/react/shallow'
-import { KonvaEventObject } from 'konva/lib/Node'
 import InsertTrackMenu from './parts/InsertTrackMenu'
-import type { Stage as KonvaStage } from 'konva/lib/Stage'
-import { Container } from 'konva/lib/Container'
 import type { Clip } from '../types/Clip'
 import type { AudioTrack } from '../types/Track'
 import { useGlobalStore } from '../stores/globalStore'
 
 const Timeline = () => {
-  const timelineContainerRef = useRef<HTMLDivElement>(null)
-  const stageRef = useRef<KonvaStage | null>(null)
+  const timelineViewportRef = useRef<HTMLDivElement>(null)
+  const applicationRef = useRef<ApplicationRef>(null)
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 })
   const lastAutoScrollTs = useRef<number | null>(null)
   const setGlobalLoading = useGlobalStore((state) => state.setGlobalLoading)
@@ -46,58 +55,59 @@ const Timeline = () => {
       })),
     )
   const {
-    stageWidth,
-    stageHeight,
-    setStageWidth,
-    setStageHeight,
     pxPerBeat,
     setPxPerBeat,
+    trackScale,
+    setTrackScale,
     barsVisible,
     setBarsVisible,
+    scrollBeats,
+    setScrollBeats,
+    scrollTracks,
+    setScrollTracks,
   } = useTimelineStore(
     useShallow((state) => ({
-      stageWidth: state.stageWidth,
-      stageHeight: state.stageHeight,
-      setStageWidth: state.setStageWidth,
-      setStageHeight: state.setStageHeight,
       pxPerBeat: state.pxPerBeat,
       setPxPerBeat: state.setPxPerBeat,
+      trackScale: state.trackScale,
+      setTrackScale: state.setTrackScale,
       barsVisible: state.barsVisible,
       setBarsVisible: state.setBarsVisible,
+      scrollBeats: state.scrollBeats,
+      setScrollBeats: state.setScrollBeats,
+      scrollTracks: state.scrollTracks,
+      setScrollTracks: state.setScrollTracks,
     })),
   )
 
-  // Make sure to always will 100% of the width
-  useEffect(() => {
-    if (containerSize.width <= 0) return
-    const barWidth = pxPerBeat * BEATS_PER_BAR
-    if (barWidth <= 0) return
+  const visibleTracks = useMemo(
+    () =>
+      generatorTracksOrder
+        .map((id) => tracks[id])
+        .filter((t): t is GeneratorTrack => !!t && t.kind !== TrackKind.Bus),
+    [generatorTracksOrder, tracks],
+  )
 
-    const requiredBars = Math.max(
-      MINIMUM_BARS_VISIBLE,
-      Math.floor(containerSize.width / barWidth),
-    )
+  const hScale = pxPerBeat / BASE_PX_PER_BEAT
+  const totalBeats = barsVisible * BEATS_PER_BAR
+  const totalTrackRows = visibleTracks.length + EXTRA_EMPTY_TRACK_SLOTS
+  const trackAreaHeight = Math.max(0, containerSize.height - TRACKS_START_Y)
 
-    // Only grow automatically (avoids surprising shrink when zooming in).
-    if (requiredBars > barsVisible) {
-      setBarsVisible(requiredBars)
-    }
-  }, [barsVisible, containerSize.width, pxPerBeat, setBarsVisible])
+  // How much of the content is currently visible, in domain units - drives
+  // both the pixi camera transforms and the custom scrollbars' thumb sizes.
+  const viewBeats = pxPerBeat > 0 ? containerSize.width / pxPerBeat : 0
+  const viewTrackRows =
+    trackScale > 0 ? trackAreaHeight / (BASE_TRACK_HEIGHT_PX * trackScale) : 0
 
-  useEffect(() => {
-    const contentWidth = barsVisible * pxPerBeat * BEATS_PER_BAR
-    setStageWidth(Math.max(contentWidth, containerSize.width))
-  }, [barsVisible, containerSize.width, pxPerBeat, setStageWidth])
+  const minViewBeats = containerSize.width / MAX_PX_PER_BEAT
+  const maxViewBeats = containerSize.width / MIN_PX_PER_BEAT
+  const minViewTrackRows = trackAreaHeight / (BASE_TRACK_HEIGHT_PX * MAX_TRACK_SCALE)
+  const maxViewTrackRows = trackAreaHeight / (BASE_TRACK_HEIGHT_PX * MIN_TRACK_SCALE)
 
-  useEffect(() => {
-    if (containerSize.height > 0) {
-      setStageHeight(containerSize.height)
-    }
-  }, [containerSize.height, setStageHeight])
-
-  // Set width and height of the stage to 100% on mount
+  // Measure the viewport (the area the Pixi canvas fills, below/left of the
+  // scrollbars) so we know how much content fits on screen.
   useLayoutEffect(() => {
-    const el = timelineContainerRef.current
+    const el = timelineViewportRef.current
     if (!el) return
     const updateSize = () => {
       setContainerSize({
@@ -112,130 +122,34 @@ const Timeline = () => {
     return () => observer.disconnect()
   }, [])
 
-  const handleWheel = (e: KonvaEventObject<WheelEvent>) => {
-    if (!e.evt.ctrlKey) return
-    e.evt.preventDefault()
+  // Pixi's `resizeTo` only re-measures on the browser window's own 'resize'
+  // event - it has no ResizeObserver of its own, so it never notices when
+  // this container resizes for any other reason (flex layout settling,
+  // sidebar toggles, etc). Force a resync whenever our own ResizeObserver
+  // above sees a change, so the canvas can't get stuck at a stale size.
+  useLayoutEffect(() => {
+    applicationRef.current?.getApplication()?.resize()
+  }, [containerSize.width, containerSize.height])
 
-    const el = timelineContainerRef.current
+  // Application.init() is async (it spins up a WebGL/WebGPU context), so on
+  // a slow first load it can finish AFTER the two effects above already ran
+  // with applicationRef still null - and since neither of them re-fires on
+  // its own, nothing would ever tell the freshly-ready app to resize, so it
+  // renders at whatever default size it started with (grid lines end up
+  // drawn for the wrong height) until some unrelated event forces a
+  // re-render. Re-measure and resize explicitly the moment init completes.
+  const handleApplicationInit = useCallback(() => {
+    const el = timelineViewportRef.current
     if (!el) return
-
-    const rect = el.getBoundingClientRect()
-    const mouseX = e.evt.clientX - rect.left
-    const scrollLeft = el.scrollLeft
-
-    const zoomFactor = 1.1
-    const nextPxPerBeat =
-      e.evt.deltaY < 0 ? pxPerBeat * zoomFactor : pxPerBeat / zoomFactor
-
-    const newPxPerBeat = Math.round(clamp(nextPxPerBeat, 7, 200))
-    if (newPxPerBeat === pxPerBeat) return
-
-    const ratio = newPxPerBeat / pxPerBeat
-    setPxPerBeat(newPxPerBeat)
-
-    requestAnimationFrame(() => {
-      const el2 = timelineContainerRef.current
-      if (!el2) return
-      const maxScrollLeft = Math.max(0, el2.scrollWidth - el2.clientWidth)
-      const desiredScrollLeft = (scrollLeft + mouseX) * ratio - mouseX
-      el2.scrollLeft = clamp(desiredScrollLeft, 0, maxScrollLeft)
+    setContainerSize({
+      width: Math.floor(el.clientWidth),
+      height: Math.floor(el.clientHeight),
     })
-  }
-
-  // Minimal "duck type" for Konva nodes we want to compensate during auto-scroll.
-  // When the timeline container scrolls, the dragged node would appear to drift away from the cursor.
-  // We counteract that by shifting the node's X by the applied scroll delta.
-  interface DragXNode {
-    x(): number
-    x(v: number): any
-  }
-
-  const autoScrollWhileDragging = useCallback(
-    (clientX: number, draggedNode?: DragXNode) => {
-      const el = timelineContainerRef.current
-      if (!el) return
-
-      // FL-style edge scroll:
-      // - When the pointer is within `thresholdPx` of the left/right edge of the scroll container,
-      //   start auto-scrolling in that direction.
-      // - The closer to the edge, the faster it scrolls (quadratic ramp).
-      const rect = el.getBoundingClientRect()
-      const thresholdPx = 60
-      const maxSpeedPxPerSec = 1400
-
-      // Use a real delta time so scrolling speed feels consistent across different event rates.
-      const now = performance.now()
-      const last = lastAutoScrollTs.current ?? now
-      lastAutoScrollTs.current = now
-      const dt = Math.min(0.05, Math.max(0.0, (now - last) / 1000))
-
-      // Compute scroll intent based on cursor proximity to edges.
-      let direction = 0
-      let intensity = 0
-      if (clientX < rect.left + thresholdPx) {
-        direction = -1
-        intensity = (thresholdPx - (clientX - rect.left)) / thresholdPx
-      } else if (clientX > rect.right - thresholdPx) {
-        direction = 1
-        intensity = (thresholdPx - (rect.right - clientX)) / thresholdPx
-      }
-
-      if (direction === 0) return
-
-      // Quadratic ramp for nicer "accelerate into edge" feel.
-      const speed = maxSpeedPxPerSec * intensity * intensity
-      const desiredDelta = direction * speed * dt
-
-      const maxScrollLeft = Math.max(0, el.scrollWidth - el.clientWidth)
-      const prevScrollLeft = el.scrollLeft
-      const nextScrollLeft = Math.min(
-        maxScrollLeft,
-        Math.max(0, prevScrollLeft + desiredDelta),
-      )
-
-      // Always extend the timeline when pushing the right edge.
-      // This makes "drag to the right forever" work even when you're already at max scrollLeft:
-      // expanding bars increases stage width, which in turn increases scrollWidth/maxScrollLeft.
-      if (direction > 0) {
-        const paddingPx = 400
-        // A little lookahead so you don't "stall" at the right edge between bar expansions.
-        const anticipatePx = speed * dt * 2
-        const visibleRightPx =
-          nextScrollLeft + el.clientWidth + paddingPx + anticipatePx
-        const endBeats = visibleRightPx / pxPerBeat
-        const requiredBars = Math.ceil(endBeats / BEATS_PER_BAR)
-        if (requiredBars > barsVisible) {
-          setBarsVisible(requiredBars)
-        }
-      }
-
-      const appliedDelta = nextScrollLeft - prevScrollLeft
-      if (appliedDelta === 0) return
-
-      el.scrollLeft = nextScrollLeft
-
-      // Keep the dragged node under the cursor by compensating for scroll movement.
-      // (Only applies to Konva drags; HTML5 drags from the Browser pass `draggedNode` as undefined.)
-      if (draggedNode) {
-        draggedNode.x(draggedNode.x() + appliedDelta)
-      }
-    },
-    [barsVisible, pxPerBeat, setBarsVisible],
-  )
-
-  const handleAutoScrollDuringDrag = useCallback(
-    (e: KonvaEventObject<DragEvent>) => {
-      const clientX = (e.evt as DragEvent).clientX
-      autoScrollWhileDragging(clientX, e.target as any)
-    },
-    [autoScrollWhileDragging],
-  )
+    applicationRef.current?.getApplication()?.resize()
+  }, [])
 
   // Ensure the timeline is wide enough to show all clips.
   useEffect(() => {
-    console.log('Ensuring timeline is wide enough for all clips')
-    // Find the max end position across all clips, then grow "barsVisible" so the stage is wide enough.
-    // This covers cases like "drop a clip far to the right" and ensures it becomes visible.
     let maxEndPpq = 0
     for (const trackId of generatorTracksOrder) {
       const track = tracks[trackId]
@@ -252,37 +166,254 @@ const Timeline = () => {
     const requiredBars = Math.ceil(endBeats / BEATS_PER_BAR)
 
     if (requiredBars > barsVisible) {
-      setBarsVisible(requiredBars)
+      setBarsVisible(Math.max(MINIMUM_BARS_VISIBLE, requiredBars))
     }
   }, [barsVisible, generatorTracksOrder, ppq, setBarsVisible, tracks])
+
+  // Grid lines/header/track backgrounds are all drawn out to `barsVisible`,
+  // so if zooming out (or a short project on a wide window) ever makes more
+  // beats visible than that covers, grow it - otherwise they'd stop short of
+  // the canvas edge instead of tiling all the way across.
+  useEffect(() => {
+    const requiredBars = Math.ceil((scrollBeats + viewBeats) / BEATS_PER_BAR)
+    if (requiredBars > barsVisible) {
+      setBarsVisible(requiredBars)
+    }
+  }, [barsVisible, scrollBeats, setBarsVisible, viewBeats])
+
+  // If the content shrinks (or the viewport grows) such that the current
+  // scroll position would show past the end of the content, pull it back in.
+  useEffect(() => {
+    const maxScrollBeats = Math.max(0, totalBeats - viewBeats)
+    if (scrollBeats > maxScrollBeats) {
+      setScrollBeats(maxScrollBeats)
+    }
+  }, [scrollBeats, setScrollBeats, totalBeats, viewBeats])
+
+  useEffect(() => {
+    const maxScrollTracks = Math.max(0, totalTrackRows - viewTrackRows)
+    if (scrollTracks > maxScrollTracks) {
+      setScrollTracks(maxScrollTracks)
+    }
+  }, [scrollTracks, setScrollTracks, totalTrackRows, viewTrackRows])
+
+  useEffect(() => {
+    // Reset dt accumulator when zoom changes so the first edge-scroll after zoom doesn't jump.
+    lastAutoScrollTs.current = null
+  }, [pxPerBeat])
+
+  const handleWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    const el = timelineViewportRef.current
+    if (!el) return
+
+    if (e.ctrlKey) {
+      e.preventDefault()
+      const rect = el.getBoundingClientRect()
+      const cursorBeats = (e.clientX - rect.left) / pxPerBeat + scrollBeats
+
+      const zoomFactor = 1.1
+      const nextPxPerBeat =
+        e.deltaY < 0 ? pxPerBeat * zoomFactor : pxPerBeat / zoomFactor
+      const newPxPerBeat = Math.round(
+        clamp(nextPxPerBeat, MIN_PX_PER_BEAT, MAX_PX_PER_BEAT),
+      )
+      if (newPxPerBeat === pxPerBeat) return
+
+      // Keep the beat under the cursor fixed on screen while zooming.
+      const newScrollBeats = cursorBeats - (e.clientX - rect.left) / newPxPerBeat
+      const newViewBeats = containerSize.width / newPxPerBeat
+      const maxScrollBeats = Math.max(0, totalBeats - newViewBeats)
+      setPxPerBeat(newPxPerBeat)
+      setScrollBeats(clamp(newScrollBeats, 0, maxScrollBeats))
+      return
+    }
+
+    if (e.shiftKey) {
+      e.preventDefault()
+      const rect = el.getBoundingClientRect()
+      const cursorTrackRows =
+        (e.clientY - rect.top - TRACKS_START_Y) /
+          (BASE_TRACK_HEIGHT_PX * trackScale) +
+        scrollTracks
+
+      const zoomFactor = 1.1
+      const nextTrackScale =
+        e.deltaY < 0 ? trackScale * zoomFactor : trackScale / zoomFactor
+      const newTrackScale = clamp(nextTrackScale, MIN_TRACK_SCALE, MAX_TRACK_SCALE)
+      if (newTrackScale === trackScale) return
+
+      // Keep the track row under the cursor fixed on screen while zooming.
+      const newScrollTracks =
+        cursorTrackRows -
+        (e.clientY - rect.top - TRACKS_START_Y) /
+          (BASE_TRACK_HEIGHT_PX * newTrackScale)
+      const newViewTrackRows = trackAreaHeight / (BASE_TRACK_HEIGHT_PX * newTrackScale)
+      const maxScrollTracks = Math.max(0, totalTrackRows - newViewTrackRows)
+      setTrackScale(newTrackScale)
+      setScrollTracks(clamp(newScrollTracks, 0, maxScrollTracks))
+      return
+    }
+
+    e.preventDefault()
+    const deltaTracks = e.deltaY / (BASE_TRACK_HEIGHT_PX * trackScale)
+    const maxScrollTracks = Math.max(0, totalTrackRows - viewTrackRows)
+    setScrollTracks(clamp(scrollTracks + deltaTracks, 0, maxScrollTracks))
+  }
+
+  // Edge auto-scroll needs to keep advancing every frame for as long as the
+  // pointer sits near an edge, not just when a new pointermove/dragover
+  // event happens to fire - otherwise it stalls the instant the cursor stops
+  // moving, and native HTML5 `dragover` events are throttled/irregular in
+  // the first place. A rAF loop reads the latest pointer X from a ref and
+  // reads/writes the timeline store directly via getState()/setState-style
+  // setters (bypassing the React hook) so the loop's own function identity
+  // can stay stable across renders without ever going stale.
+  const autoScrollDragRef = useRef<{ clientX: number | null; rafId: number | null }>(
+    { clientX: null, rafId: null },
+  )
+
+  const stepAutoScroll = useCallback(() => {
+    const dragState = autoScrollDragRef.current
+    const el = timelineViewportRef.current
+    if (dragState.clientX === null || !el) {
+      dragState.rafId = null
+      return
+    }
+
+    const clientX = dragState.clientX
+    const rect = el.getBoundingClientRect()
+    const thresholdPx = 60
+    const maxSpeedPxPerSec = 1400
+
+    const now = performance.now()
+    const last = lastAutoScrollTs.current ?? now
+    lastAutoScrollTs.current = now
+    const dt = Math.min(0.05, Math.max(0.0, (now - last) / 1000))
+
+    let direction = 0
+    let intensity = 0
+    if (clientX < rect.left + thresholdPx) {
+      direction = -1
+      intensity = (thresholdPx - (clientX - rect.left)) / thresholdPx
+    } else if (clientX > rect.right - thresholdPx) {
+      direction = 1
+      intensity = (thresholdPx - (rect.right - clientX)) / thresholdPx
+    }
+
+    if (direction !== 0) {
+      const store = useTimelineStore.getState()
+      const speed = maxSpeedPxPerSec * intensity * intensity
+      const desiredDeltaBeats = (direction * speed * dt) / store.pxPerBeat
+      const viewportBeats = el.clientWidth / store.pxPerBeat
+
+      let barsVisibleNow = store.barsVisible
+      if (direction > 0) {
+        const paddingBeats = 400 / store.pxPerBeat
+        const anticipateBeats = (speed * dt * 2) / store.pxPerBeat
+        const visibleRightBeats =
+          store.scrollBeats + viewportBeats + paddingBeats + anticipateBeats
+        const requiredBars = Math.ceil(visibleRightBeats / BEATS_PER_BAR)
+        if (requiredBars > barsVisibleNow) {
+          store.setBarsVisible(requiredBars)
+          barsVisibleNow = requiredBars
+        }
+      }
+
+      const maxScrollBeats = Math.max(0, barsVisibleNow * BEATS_PER_BAR - viewportBeats)
+      const nextScrollBeats = clamp(
+        store.scrollBeats + desiredDeltaBeats,
+        0,
+        maxScrollBeats,
+      )
+      if (nextScrollBeats !== store.scrollBeats) {
+        store.setScrollBeats(nextScrollBeats)
+      }
+    }
+
+    dragState.rafId = requestAnimationFrame(stepAutoScroll)
+  }, [])
+
+  const autoScrollWhileDragging = useCallback(
+    (clientX: number) => {
+      const dragState = autoScrollDragRef.current
+      dragState.clientX = clientX
+      if (dragState.rafId === null) {
+        lastAutoScrollTs.current = null
+        dragState.rafId = requestAnimationFrame(stepAutoScroll)
+      }
+    },
+    [stepAutoScroll],
+  )
+
+  const stopAutoScrollDragging = useCallback(() => {
+    const dragState = autoScrollDragRef.current
+    dragState.clientX = null
+    if (dragState.rafId !== null) {
+      cancelAnimationFrame(dragState.rafId)
+      dragState.rafId = null
+    }
+    lastAutoScrollTs.current = null
+  }, [])
+
+  useEffect(() => stopAutoScrollDragging, [stopAutoScrollDragging])
+
+  const handleHorizontalScrollChange = useCallback(
+    (newViewStart: number, newViewSize: number) => {
+      const totalBeatsNow = barsVisible * BEATS_PER_BAR
+      const newViewEnd = newViewStart + newViewSize
+      if (newViewEnd > totalBeatsNow) {
+        setBarsVisible(
+          Math.max(barsVisible, Math.ceil(newViewEnd / BEATS_PER_BAR)),
+        )
+      }
+      const newPxPerBeat = clamp(
+        containerSize.width / newViewSize,
+        MIN_PX_PER_BEAT,
+        MAX_PX_PER_BEAT,
+      )
+      setPxPerBeat(newPxPerBeat)
+      setScrollBeats(Math.max(0, newViewStart))
+    },
+    [barsVisible, containerSize.width, setBarsVisible, setPxPerBeat, setScrollBeats],
+  )
+
+  const handleVerticalScrollChange = useCallback(
+    (newViewStart: number, newViewSize: number) => {
+      const newTrackScale = clamp(
+        trackAreaHeight / (newViewSize * BASE_TRACK_HEIGHT_PX),
+        MIN_TRACK_SCALE,
+        MAX_TRACK_SCALE,
+      )
+      setTrackScale(newTrackScale)
+      const newViewTrackRows = trackAreaHeight / (BASE_TRACK_HEIGHT_PX * newTrackScale)
+      const maxScrollTracks = Math.max(0, totalTrackRows - newViewTrackRows)
+      setScrollTracks(clamp(newViewStart, 0, maxScrollTracks))
+    },
+    [setScrollTracks, setTrackScale, totalTrackRows, trackAreaHeight],
+  )
 
   const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     e.stopPropagation()
-    const stage = stageRef.current
-    if (!stage) return
+    stopAutoScrollDragging()
     const audioPath = e.dataTransfer.getData('audio-path')
-    console.log(audioPath)
+    if (!audioPath) return
+
     const el = e.currentTarget
     const rect = el.getBoundingClientRect()
-    const xPosition = e.clientX - rect.left + el.scrollLeft
-    const beatsPosition = xPosition / pxPerBeat
+    const xPosition = e.clientX - rect.left
+    const yPosition = e.clientY - rect.top
+    const beatsPosition = xPosition / pxPerBeat + scrollBeats
     const ppqPosition = Math.max(0, Math.round(beatsPosition * ppq))
-    stage.setPointersPositions(e.nativeEvent as any)
-    const stagePointerPos = stage.getPointerPosition()
-    if (!stagePointerPos) return
-    const shape = stage.getIntersection(stagePointerPos)
-    const trackNode = shape?.findAncestor(
-      (node: Container) => node.hasName('track'),
-      true,
-    )
+    const trackRowUnits =
+      (yPosition - TRACKS_START_Y) / (BASE_TRACK_HEIGHT_PX * trackScale) +
+      scrollTracks
+    const trackIndex = Math.floor(trackRowUnits)
+    const targetTrack = trackIndex >= 0 ? visibleTracks[trackIndex] : null
 
     // Drop on an existing audio track -> insert clip into that track.
-    // Drop on empty space (no intersected track) -> create new audio track with one clip.
-    const trackId = trackNode?.id() ?? null
-    const trackKind = trackNode ? trackNode.getAttr('kind') : null
-
-    if (!trackNode) {
+    // Drop on empty space (no track) -> create new audio track with one clip.
+    if (!targetTrack) {
       setGlobalLoading(true)
       const created = await invoke<AudioTrack | null>(
         MIXER_ADD_AUDIO_TRACK_WITH_CLIP,
@@ -296,13 +427,17 @@ const Timeline = () => {
       return
     }
 
-    if (trackKind !== TrackKind.Audio) return
+    if (targetTrack.kind !== TrackKind.Audio) return
 
     setGlobalLoading(true)
     const insertedClip = await invoke<Clip | null>(
       MIXER_ADD_CLIP_TO_AUDIO_TRACK,
       {
-        clip: { trackId, startPpq: ppqPosition, sourcePath: audioPath },
+        clip: {
+          trackId: targetTrack.id,
+          startPpq: ppqPosition,
+          sourcePath: audioPath,
+        },
       },
     )
     setGlobalLoading(false)
@@ -310,60 +445,94 @@ const Timeline = () => {
     addClip(insertedClip)
   }
 
-  useEffect(() => {
-    // Reset dt accumulator when zoom changes so the first edge-scroll after zoom doesn't jump.
-    lastAutoScrollTs.current = null
-  }, [pxPerBeat])
-
   return (
     <div className='flex flex-col h-full'>
       <div className='p-2'>
         <InsertTrackMenu />
       </div>
-      <div
-        id='timeline-container'
-        ref={timelineContainerRef}
-        className='w-full h-full overflow-scroll'
-        onDragOver={(e) => {
-          e.preventDefault()
-          e.stopPropagation()
-          e.dataTransfer.dropEffect = 'copy'
-          // HTML5 drag from the Browser (outside Konva) still needs the same edge auto-scroll + timeline expansion.
-          autoScrollWhileDragging(e.clientX)
-        }}
-        onDrop={handleDrop}
-      >
-        <Stage
-          ref={stageRef}
-          width={stageWidth}
-          height={stageHeight}
-          className='h-full'
-          onWheel={handleWheel}
-          onContextMenu={(e: KonvaEventObject<MouseEvent>) => {
-            console.log('Context menu on timeline')
-            e.evt.preventDefault()
-          }}
+      <div className='relative flex-1 min-h-0'>
+        <div
+          className='absolute top-0 left-0'
+          style={{ right: SCROLLBAR_THICKNESS_PX, height: SCROLLBAR_THICKNESS_PX }}
         >
-          <Layer>
-            <TimelineGridLines />
-            <Group name='tracks-container' y={20}>
-              {generatorTracksOrder
-                .map((id) => tracks[id])
-                .filter(
-                  (t): t is GeneratorTrack => !!t && t.kind !== TrackKind.Bus,
-                )
-                .map((track, index) => (
+          <TimelineScrollbar
+            orientation='horizontal'
+            viewStart={scrollBeats}
+            viewSize={viewBeats}
+            totalSize={totalBeats}
+            minViewSize={minViewBeats}
+            maxViewSize={maxViewBeats}
+            onChange={handleHorizontalScrollChange}
+          />
+        </div>
+        <div
+          className='absolute top-0 right-0 bottom-0'
+          style={{ width: SCROLLBAR_THICKNESS_PX }}
+        >
+          <TimelineScrollbar
+            orientation='vertical'
+            viewStart={scrollTracks}
+            viewSize={viewTrackRows}
+            totalSize={totalTrackRows}
+            minViewSize={minViewTrackRows}
+            maxViewSize={maxViewTrackRows}
+            onChange={handleVerticalScrollChange}
+          />
+        </div>
+        <div
+          id='timeline-viewport'
+          ref={timelineViewportRef}
+          className='absolute left-0 overflow-hidden'
+          style={{
+            top: SCROLLBAR_THICKNESS_PX,
+            right: SCROLLBAR_THICKNESS_PX,
+            bottom: 0,
+          }}
+          onWheel={handleWheel}
+          onContextMenu={(e) => e.preventDefault()}
+          onDragOver={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            e.dataTransfer.dropEffect = 'copy'
+            autoScrollWhileDragging(e.clientX)
+          }}
+          onDragLeave={stopAutoScrollDragging}
+          onDrop={handleDrop}
+        >
+          <Application
+            ref={applicationRef}
+            resizeTo={timelineViewportRef}
+            onInit={handleApplicationInit}
+            className='block'
+            backgroundAlpha={0}
+            antialias={false}
+            autoDensity
+          >
+            <pixiContainer
+              x={-scrollBeats * pxPerBeat}
+              scale={{ x: hScale, y: 1 }}
+            >
+              <TimelineGridLines viewportHeight={containerSize.height} />
+              <pixiContainer
+                y={TRACKS_START_Y - scrollTracks * BASE_TRACK_HEIGHT_PX * trackScale}
+                scale={{ x: 1, y: trackScale }}
+              >
+                {visibleTracks.map((track, index) => (
                   <TimelineTrack
                     key={track.id}
                     track={track}
                     trackIndex={index}
-                    onAutoScrollDuringDrag={handleAutoScrollDuringDrag}
+                    onAutoScrollDuringDrag={autoScrollWhileDragging}
+                    onAutoScrollDragEnd={stopAutoScrollDragging}
                   />
                 ))}
-            </Group>
-            <TimelineBar />
-          </Layer>
-        </Stage>
+              </pixiContainer>
+              {/* Drawn last so the ruler/playhead-handle stay on top of any
+                  track rows that scroll up underneath them. */}
+              <TimelineBar viewportHeight={containerSize.height} />
+            </pixiContainer>
+          </Application>
+        </div>
       </div>
     </div>
   )

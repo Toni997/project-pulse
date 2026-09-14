@@ -1,7 +1,29 @@
 export const DEFAULT_BARS_VISIBLE = 30
 export const MINIMUM_BARS_VISIBLE = 30
-export const DEFAULT_PX_PER_BEAT = 10
 export const BEATS_PER_BAR = 4
+
+// Horizontal (time) zoom. Content is drawn once in these "base" units and
+// zoomed purely via a Pixi transform (scale.x), so zooming never redraws
+// clip/grid geometry - only the transform and a couple of stroke widths change.
+export const BASE_PX_PER_BEAT = 10
+export const DEFAULT_PX_PER_BEAT = BASE_PX_PER_BEAT
+export const MIN_PX_PER_BEAT = 7
+export const MAX_PX_PER_BEAT = 200
+
+// Vertical (track height) zoom, same idea as above but for track rows.
+export const BASE_TRACK_HEIGHT_PX = 100
+export const DEFAULT_TRACK_SCALE = 1
+// Keep at least enough room for a 12px clip name to stay legible.
+export const MIN_TRACK_SCALE = 0.3
+export const MAX_TRACK_SCALE = 3
+
+export const TRACKS_START_Y = 20
+// Always keep one extra empty row past the last track, as a drop target for
+// dragging in a new sample/instrument.
+export const EXTRA_EMPTY_TRACK_SLOTS = 1
+
+export const SCROLLBAR_THICKNESS_PX = 14
+
 export const NOTIFICATION_ERROR_EVENT = 'notification-error'
 
 export const FS_SCAN_DIRECTORY_TREE = 'fs_scan_directory_tree'

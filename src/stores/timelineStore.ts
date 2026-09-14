@@ -1,34 +1,38 @@
 import { create } from 'zustand'
 import {
-  BEATS_PER_BAR,
   DEFAULT_BARS_VISIBLE,
   DEFAULT_PX_PER_BEAT,
+  DEFAULT_TRACK_SCALE,
 } from '../helpers/constants'
 
 interface TimelineState {
-  playheadPosition: number
-  stageWidth: number
-  stageHeight: number
+  playheadBeats: number
   pxPerBeat: number
+  trackScale: number
   barsVisible: number
+  scrollBeats: number
+  scrollTracks: number
 
-  setPlayheadPosition: (playheadPosition: number) => void
-  setStageWidth: (stageWidth: number) => void
-  setStageHeight: (stageHeight: number) => void
+  setPlayheadBeats: (playheadBeats: number) => void
   setPxPerBeat: (pxPerBeat: number) => void
+  setTrackScale: (trackScale: number) => void
   setBarsVisible: (barsVisible: number) => void
+  setScrollBeats: (scrollBeats: number) => void
+  setScrollTracks: (scrollTracks: number) => void
 }
 
 export const useTimelineStore = create<TimelineState>((set) => ({
-  playheadPosition: 0,
-  stageWidth: DEFAULT_BARS_VISIBLE * DEFAULT_PX_PER_BEAT * BEATS_PER_BAR,
-  stageHeight: window.innerHeight,
+  playheadBeats: 0,
   pxPerBeat: DEFAULT_PX_PER_BEAT,
+  trackScale: DEFAULT_TRACK_SCALE,
   barsVisible: DEFAULT_BARS_VISIBLE,
+  scrollBeats: 0,
+  scrollTracks: 0,
 
-  setPlayheadPosition: (playheadPosition) => set({ playheadPosition }),
-  setStageWidth: (stageWidth) => set({ stageWidth }),
-  setStageHeight: (stageHeight) => set({ stageHeight }),
+  setPlayheadBeats: (playheadBeats) => set({ playheadBeats }),
   setPxPerBeat: (pxPerBeat) => set({ pxPerBeat }),
+  setTrackScale: (trackScale) => set({ trackScale }),
   setBarsVisible: (barsVisible) => set({ barsVisible }),
+  setScrollBeats: (scrollBeats) => set({ scrollBeats }),
+  setScrollTracks: (scrollTracks) => set({ scrollTracks }),
 }))
