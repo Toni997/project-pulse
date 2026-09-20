@@ -41,3 +41,11 @@ sorted-vec = "0.8.10"
 strum_macros = "0.28.0"
 indexmap = { version = "2.13.0", features = ["serde"] }
 num_cpus = "1.17.0"
+parking_lot = "0.12.5"
+bitflags = "2.13.2"
+derive_more = { version = "2.1.1", features = ["try_into"] }
+
+# Dependencies (symphonia, rubato) are far too slow unoptimized for audio work;
+# this only affects dev builds of third-party crates.
+[profile.dev.package."*"]
+opt-level = 3

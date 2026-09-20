@@ -1,6 +1,10 @@
-use crate::audio::preview_mixer::PREVIEW_MIXER;
+use std::sync::Arc;
+
+use tauri::State;
+
+use crate::app_state::AppState;
 
 #[tauri::command]
-pub fn preview_play(file_path: String) {
-    PREVIEW_MIXER.play(&file_path);
+pub fn preview_play(state: State<Arc<AppState>>, file_path: String) {
+    state.preview_mixer.play(&file_path);
 }

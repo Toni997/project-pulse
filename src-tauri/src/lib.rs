@@ -1,9 +1,15 @@
-mod audio;
+mod app_state;
 mod commands;
 mod core;
+mod engine;
+mod project;
+mod services;
+mod snapshot;
 
 use std::sync::OnceLock;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
+
+use crate::app_state::AppState;
 
 pub static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 
@@ -19,7 +25,7 @@ pub fn run() {
             let _ = APP_HANDLE.set(app.handle().clone());
             // send project file name if it was a load
             core::logger::setup_logger().expect("Failed to initialize logging");
-            core::initializator::initialize_project(None);
+            app.manage(AppState::bootstrap(None));
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())

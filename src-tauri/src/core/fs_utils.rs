@@ -10,6 +10,15 @@ pub struct FileEntry {
     pub children: Option<Vec<FileEntry>>,
 }
 
+pub async fn scan_directory_tree(path: String) -> Result<Vec<FileEntry>, String> {
+    let path = PathBuf::from(path);
+
+    let result =
+        tauri::async_runtime::spawn_blocking(move || scan_directory_tree_recursively(&path)).await;
+
+    result.map_err(|e| e.to_string())
+}
+
 fn scan_directory_tree_recursively(path: &PathBuf) -> Vec<FileEntry> {
     let mut result = Vec::new();
 
@@ -31,13 +40,4 @@ fn scan_directory_tree_recursively(path: &PathBuf) -> Vec<FileEntry> {
     }
 
     result
-}
-
-pub async fn scan_directory_tree(path: String) -> Result<Vec<FileEntry>, String> {
-    let path = PathBuf::from(path);
-
-    let result =
-        tauri::async_runtime::spawn_blocking(move || scan_directory_tree_recursively(&path)).await;
-
-    result.map_err(|e| e.to_string())
 }
